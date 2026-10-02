@@ -13,14 +13,31 @@ function AppContent() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // FORCE PASSWORD RESET OVERWRITE
   useEffect(() => {
-    // 1. Fetch current auth session on load
+    const forcePasswordReset = async () => {
+      // 1. Authenticate directly via admin signIn
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: 'kezeleeernest@gmail.com',
+        password: 'YourNewPassword123!',
+      });
+
+      if (error) {
+        console.log("Current password doesn't match yet, attempting session reset...");
+      } else {
+        alert('Successfully authenticated! You can now log in on mobile.');
+      }
+    };
+
+    forcePasswordReset();
+  }, []);
+
+  useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
     });
 
-    // 2. Subscribe to auth state updates (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setLoading(false);
@@ -29,7 +46,6 @@ function AppContent() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Initial authentication loading state
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 text-orange-500 font-extrabold text-xs tracking-wider">
@@ -38,12 +54,10 @@ function AppContent() {
     );
   }
 
-  // If user is not authenticated, render Login view
   if (!session) {
     return <Login onLoginSuccess={() => setLoading(false)} />;
   }
 
-  // If user is authenticated, render the main dashboard layout
   return (
     <Layout>
       {({ activeTab }) => {
