@@ -29,8 +29,10 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
-      - name: Sync Capacitor Android
-        run: npx cap sync android
+      - name: Force Sync Capacitor Android Assets
+        run: |
+          npx cap copy android
+          npx cap sync android
 
       - name: Setup Java JDK
         uses: actions/setup-java@v4
@@ -44,10 +46,10 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x android/gradlew
 
-      - name: Build Debug APK
+      - name: Clean Build and Assemble Debug APK
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew clean assembleDebug --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
