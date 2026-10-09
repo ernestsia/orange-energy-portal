@@ -35,6 +35,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -45,7 +47,7 @@ jobs:
       - name: Build Debug APK
         run: |
           cd android
-          ./gradlew assembleDebug
+          yes | ./gradlew assembleDebug
 
       - name: Upload APK & Generate QR Code
         run: |
