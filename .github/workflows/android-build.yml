@@ -18,7 +18,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'npm'
 
       - name: Install Dependencies
@@ -49,17 +49,14 @@ jobs:
 
       - name: Upload APK & Generate QR Code
         run: |
-          # 1. Upload APK to file.io (expires in 14 days)
           RESPONSE=$(curl -s -F "file=@android/app/build/outputs/apk/debug/app-debug.apk" https://file.io)
           DOWNLOAD_URL=$(echo "$RESPONSE" | jq -r '.link')
 
           echo "Download URL: $DOWNLOAD_URL"
 
-          # 2. Encode Download URL into QR Code
           ENCODED_URL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$DOWNLOAD_URL'))")
           QR_IMAGE_URL="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${ENCODED_URL}"
 
-          # 3. Print QR Code directly into GitHub Action Job Summary
           echo "## 📱 Scan to Install APK on Phone" >> $GITHUB_STEP_SUMMARY
           echo "Scan this QR code with your phone camera to download **app-debug.apk**:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
