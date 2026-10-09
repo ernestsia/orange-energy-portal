@@ -4,55 +4,71 @@ on:
   push:
     branches:
       - main
+      - master
   workflow_dispatch:
 
 jobs:
-  build-apk:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 18
           cache: 'npm'
 
       - name: Install Dependencies
         run: npm ci
 
-      - name: Build Web Assets
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      - name: Build Web Application
         run: npm run build
 
-      - name: Force Sync Capacitor Android Assets
-        run: |
-          npx cap copy android
-          npx cap sync android
-
-      - name: Setup Java JDK
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Grant Execute Permission for Gradlew
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Make Gradle Executable
         run: chmod +x android/gradlew
 
-      - name: Clean Build and Assemble Debug APK
+      - name: Build Debug APK
         run: |
           cd android
-          ./gradlew clean assembleDebug --no-daemon
+          ./gradlew assembleDebug
+
+      - name: Upload APK & Generate QR Code
+        run: |
+          # 1. Upload APK to file.io (expires in 14 days)
+          RESPONSE=$(curl -s -F "file=@android/app/build/outputs/apk/debug/app-debug.apk" https://file.io)
+          DOWNLOAD_URL=$(echo "$RESPONSE" | jq -r '.link')
+
+          echo "Download URL: $DOWNLOAD_URL"
+
+          # 2. Encode Download URL into QR Code
+          ENCODED_URL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$DOWNLOAD_URL'))")
+          QR_IMAGE_URL="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${ENCODED_URL}"
+
+          # 3. Print QR Code directly into GitHub Action Job Summary
+          echo "## 📱 Scan to Install APK on Phone" >> $GITHUB_STEP_SUMMARY
+          echo "Scan this QR code with your phone camera to download **app-debug.apk**:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "![APK QR Code](${QR_IMAGE_URL})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[Direct Download Link](${DOWNLOAD_URL})" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Orange-Energy-Portal-Debug-APK
+          name: OrangeEnergy-App-Debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
