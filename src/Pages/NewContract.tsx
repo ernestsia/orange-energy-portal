@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Save, CheckCircle2, AlertCircle, RefreshCw, FileDown, Camera, MapPin, Eraser, Image as ImageIcon } from 'lucide-react';
+import { Geolocation } from '@capacitor/geolocation';
 import { supabase } from '../Lib/supabase';
 
 const OFFER_OPTIONS = [
@@ -100,25 +101,41 @@ export const NewContract: React.FC<{ currentUser?: any }> = ({ currentUser }) =>
     }));
   };
 
-  // GPS Auto-Detect Feature
-  const handleGetGps = () => {
-    if (!navigator.geolocation) {
-      setMessage({ type: 'error', text: 'Geolocation is not supported by your browser.' });
-      return;
-    }
+  // Capacitor Native GPS Auto-Detect Feature
+  const handleGetGps = async () => {
     setGettingGps(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const coords = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
-        setFormData((prev) => ({ ...prev, gpsCoordinates: coords }));
+    setMessage(null);
+
+    try {
+      // 1. Request Android OS permission explicitly
+      const permission = await Geolocation.requestPermissions();
+      if (permission.location === 'denied') {
+        setMessage({
+          type: 'error',
+          text: 'Location permission was denied. Please allow location permissions in device settings.',
+        });
         setGettingGps(false);
-      },
-      (err) => {
-        setMessage({ type: 'error', text: `Failed to retrieve GPS location: ${err.message}` });
-        setGettingGps(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+        return;
+      }
+
+      // 2. Fetch position using device GPS module
+      const position = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 10000,
+      });
+
+      const coords = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+      setFormData((prev) => ({ ...prev, gpsCoordinates: coords }));
+      setMessage({ type: 'success', text: 'GPS coordinates retrieved successfully!' });
+    } catch (err: any) {
+      console.error('Capacitor Geolocation Error:', err);
+      setMessage({
+        type: 'error',
+        text: `Failed to retrieve GPS location: ${err.message || 'GPS service unavailable'}`,
+      });
+    } finally {
+      setGettingGps(false);
+    }
   };
 
   // Handle Thumbprint Image Upload
@@ -599,16 +616,16 @@ export const NewContract: React.FC<{ currentUser?: any }> = ({ currentUser }) =>
               </label>
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs text-slate-700 space-y-2 max-h-48 overflow-y-auto leading-relaxed">
                 <p>
-                  <strong>Article 1: Object</strong> - Orange Liberia provides solar energy solutions governed by these terms.
+                  <strong>Article 1: Object</strong> Orange Liberia provides solar energy solutions governed by these terms.
                 </p>
                 <p>
-                  <strong>Article 3: Rental/Sale</strong> - Equipment remains property of Orange until fully paid. First 30 days payment due 15 days after installation. 14-day money-back guarantee/withdrawal.
+                  <strong>Article 3: Rental/Sale</strong> Equipment remains property of Orange until fully paid. First 30 days payment due 15 days after installation. 14-day money-back guarantee/withdrawal.
                 </p>
                 <p>
-                  <strong>Article 5: Activation</strong> - Customer must maintain an active Orange SIM with Orange Money.
+                  <strong>Article 5: Activation</strong> Customer must maintain an active Orange SIM with Orange Money.
                 </p>
                 <p>
-                  <strong>Article 9: Termination</strong> - Failure to pay monthly fees results in suspension. Orange reserves right to repossess equipment after 60 days of unpaid suspension.
+                  <strong>Article 9: Termination</strong> Failure to pay monthly fees results in suspension. Orange reserves right to repossess equipment after 60 days of unpaid suspension.
                 </p>
               </div>
             </div>
@@ -743,46 +760,6 @@ export const NewContract: React.FC<{ currentUser?: any }> = ({ currentUser }) =>
               </div>
             </div>
 
-            {/* Customer Thumbprint Photo */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                Customer Thumbprint Photo <span className="text-slate-400 font-normal">(Optional)</span>
-              </label>
-              <input
-                type="file"
-                ref={thumbprintInputRef}
-                accept="image/*"
-                capture="environment"
-                onChange={handleThumbprintUpload}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => thumbprintInputRef.current?.click()}
-                className="w-full py-3 bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg flex items-center justify-center gap-2 transition-colors"
-              >
-                <Camera className="w-4 h-4 text-slate-500" />
-                <span>{thumbprintImage ? 'Change Thumbprint Photo' : 'Take / Upload Customer Thumbprint Photo'}</span>
-              </button>
-              
-              {thumbprintImage ? (
-                <div className="mt-3 relative border rounded-lg overflow-hidden max-w-xs mx-auto bg-slate-900 p-2 text-center">
-                  <img src={thumbprintImage} alt="Thumbprint Preview" className="max-h-40 mx-auto rounded object-contain" />
-                  <button
-                    type="button"
-                    onClick={() => setThumbprintImage(null)}
-                    className="mt-2 text-xs text-rose-400 hover:text-rose-300 font-medium underline"
-                  >
-                    Remove Photo
-                  </button>
-                </div>
-              ) : (
-                <div className="mt-2 border border-dashed border-slate-200 rounded-lg p-6 text-center text-xs text-slate-400">
-                  No thumbprint captured (Optional)
-                </div>
-              )}
-            </div>
-
             {/* Agent Signature Box */}
             <div>
               <div className="flex justify-between items-center mb-2">
@@ -816,30 +793,62 @@ export const NewContract: React.FC<{ currentUser?: any }> = ({ currentUser }) =>
                 </div>
               </div>
             </div>
+
+            {/* Customer Thumbprint Photo */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                Customer Thumbprint Photo <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <input
+                type="file"
+                ref={thumbprintInputRef}
+                accept="image/*"
+                capture="environment"
+                onChange={handleThumbprintUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => thumbprintInputRef.current?.click()}
+                className="w-full py-3 bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg flex items-center justify-center gap-2 transition-colors"
+              >
+                <Camera className="w-4 h-4 text-slate-500" />
+                <span>{thumbprintImage ? 'Change Thumbprint Photo' : 'Take / Upload Customer Thumbprint Photo'}</span>
+              </button>
+
+              {thumbprintImage && (
+                <div className="mt-3 flex items-center gap-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <img src={thumbprintImage} alt="Thumbprint Preview" className="w-16 h-16 object-cover rounded-md border" />
+                  <span className="text-xs font-medium text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4" /> Thumbprint captured
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center gap-4 pt-4">
+        <div className="flex flex-col sm:flex-row gap-4 pt-4">
           <button
             type="button"
             onClick={handleSaveDraft}
-            className="w-full sm:w-1/2 py-3.5 px-4 border border-slate-300 rounded-xl font-bold text-slate-700 bg-white hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
+            className="flex-1 py-3.5 px-6 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-sm"
           >
-            <Save className="w-4 h-4 text-slate-500" />
+            <Save className="w-4 h-4" />
             <span>Save Draft</span>
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="w-full sm:w-1/2 py-3.5 px-4 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 transition-colors flex items-center justify-center gap-2 text-sm uppercase tracking-wider disabled:opacity-50 shadow-md shadow-orange-500/20"
+            className="flex-1 py-3.5 px-6 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-orange-500/20 disabled:opacity-50"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
             ) : (
               <Send className="w-4 h-4" />
             )}
-            <span>{loading ? 'Submitting...' : 'Submit Contract'}</span>
+            <span>{loading ? 'Submitting Contract...' : 'Submit Subscriber Contract'}</span>
           </button>
         </div>
       </form>
