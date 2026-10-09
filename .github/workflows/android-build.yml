@@ -49,25 +49,24 @@ jobs:
           cd android
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK & Generate QR Code
-        run: |
-          RESPONSE=$(curl -s -F "file=@android/app/build/outputs/apk/debug/app-debug.apk" https://file.io)
-          DOWNLOAD_URL=$(echo "$RESPONSE" | jq -r '.link')
-
-          echo "Download URL: $DOWNLOAD_URL"
-
-          ENCODED_URL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$DOWNLOAD_URL'))")
-          QR_IMAGE_URL="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${ENCODED_URL}"
-
-          echo "## 📱 Scan to Install APK on Phone" >> $GITHUB_STEP_SUMMARY
-          echo "Scan this QR code with your phone camera to download **app-debug.apk**:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "![APK QR Code](${QR_IMAGE_URL})" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "[Direct Download Link](${DOWNLOAD_URL})" >> $GITHUB_STEP_SUMMARY
-
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: OrangeEnergy-App-Debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Generate Direct Download QR Code
+        if: success()
+        run: |
+          # Construct direct download URL using nightly.link for public repo artifacts
+          DOWNLOAD_URL="https://nightly.link/${{ github.repository }}/workflows/android-build/main/OrangeEnergy-App-Debug.zip"
+          
+          ENCODED_URL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$DOWNLOAD_URL'))")
+          QR_IMAGE_URL="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${ENCODED_URL}"
+
+          echo "## 📱 Scan to Install APK on Tecno Mobile" >> $GITHUB_STEP_SUMMARY
+          echo "Scan this QR code with your phone camera to download **app-debug.apk** directly:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "![APK QR Code](${QR_IMAGE_URL})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[Direct Zip Download Link](${DOWNLOAD_URL})" >> $GITHUB_STEP_SUMMARY
