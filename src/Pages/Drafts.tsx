@@ -27,7 +27,11 @@ interface DraftContract {
   agentSignature?: string;
 }
 
-export const DraftsView: React.FC = () => {
+interface DraftsProps {
+  currentUser?: any;
+}
+
+export default function Drafts({ currentUser }: DraftsProps) {
   const [drafts, setDrafts] = useState<DraftContract[]>([]);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -87,6 +91,7 @@ export const DraftsView: React.FC = () => {
           agent_contact: draft.agentContact,
           customer_signature: draft.customerSignature || null,
           agent_signature: draft.agentSignature || null,
+          created_by: currentUser?.id || null,
           status: 'pending',
         },
       ]);
@@ -230,4 +235,4 @@ export const DraftsView: React.FC = () => {
       )}
     </div>
   );
-};
+}

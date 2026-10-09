@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Save, CheckCircle2, AlertCircle, RefreshCw, FileDown, Camera, MapPin, Eraser } from 'lucide-react';
+import { Send, Save, CheckCircle2, AlertCircle, RefreshCw, FileDown, Camera, MapPin, Eraser, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../Lib/supabase';
 
 const OFFER_OPTIONS = [
@@ -30,7 +30,7 @@ const OFFER_OPTIONS = [
   },
 ];
 
-export const NewContractView: React.FC = () => {
+export const NewContract: React.FC<{ currentUser?: any }> = ({ currentUser }) => {
   const [formData, setFormData] = useState({
     // Section 1: Customer Identification
     customerName: '',
@@ -55,13 +55,17 @@ export const NewContractView: React.FC = () => {
     fileNumber: '',
     agreementDate: new Date().toISOString().split('T')[0],
     orangeShop: '',
-    agentName: '',
+    agentName: currentUser?.fullName || '',
     agentContact: '07',
   });
 
   const [loading, setLoading] = useState(false);
   const [gettingGps, setGettingGps] = useState(false);
+  const [thumbprintImage, setThumbprintImage] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // File Input Ref for Thumbprint
+  const thumbprintInputRef = useRef<HTMLInputElement | null>(null);
 
   // Canvas Refs & Tracking
   const customerSigCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -69,7 +73,7 @@ export const NewContractView: React.FC = () => {
   const [isDrawingCustomer, setIsDrawingCustomer] = useState(false);
   const [isDrawingAgent, setIsDrawingAgent] = useState(false);
 
-  // Phone Number Formatter (Enforces 10 digits starting with 07)
+  // Phone Number Formatter (Enforces starting with 07)
   const formatPhoneNumber = (val: string) => {
     let digits = val.replace(/\D/g, '');
     if (!digits.startsWith('07')) {
@@ -117,7 +121,19 @@ export const NewContractView: React.FC = () => {
     );
   };
 
-  // Adjusted Canvas Drawing Logic (Touch & Mouse optimized)
+  // Handle Thumbprint Image Upload
+  const handleThumbprintUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setThumbprintImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Canvas Drawing Logic (Touch & Mouse)
   const getCanvasCoordinates = (
     e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>,
     canvas: HTMLCanvasElement
@@ -178,13 +194,22 @@ export const NewContractView: React.FC = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   };
 
-  // Initialize Canvas Styling and High DPI Rendering
+  const isCanvasBlank = (canvas: HTMLCanvasElement | null) => {
+    if (!canvas) return true;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return true;
+    const pixelBuffer = new Uint32Array(
+      ctx.getImageData(0, 0, canvas.width, canvas.height).data.buffer
+    );
+    return !pixelBuffer.some((color) => color !== 0);
+  };
+
   useEffect(() => {
     [customerSigCanvasRef.current, agentSigCanvasRef.current].forEach((canvas) => {
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.strokeStyle = '#0f172a'; // Deep slate ink color
+          ctx.strokeStyle = '#0f172a';
           ctx.lineWidth = 2.5;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
@@ -193,7 +218,6 @@ export const NewContractView: React.FC = () => {
     });
   }, []);
 
-  // Form Validation
   const validateForm = () => {
     if (formData.phoneNumber.length !== 10) {
       setMessage({ type: 'error', text: 'Primary Phone Number must be exactly 10 digits starting with 07.' });
@@ -205,6 +229,14 @@ export const NewContractView: React.FC = () => {
     }
     if (formData.agentContact.length !== 10) {
       setMessage({ type: 'error', text: 'Agent Contact Number must be exactly 10 digits starting with 07.' });
+      return false;
+    }
+    if (isCanvasBlank(customerSigCanvasRef.current)) {
+      setMessage({ type: 'error', text: 'Customer signature is required.' });
+      return false;
+    }
+    if (isCanvasBlank(agentSigCanvasRef.current)) {
+      setMessage({ type: 'error', text: 'Agent signature is required.' });
       return false;
     }
     return true;
@@ -244,7 +276,9 @@ export const NewContractView: React.FC = () => {
           agent_contact: formData.agentContact,
           customer_signature: customerSigData,
           agent_signature: agentSigData,
+          thumbprint_photo: thumbprintImage,
           status: 'pending',
+          user_id: currentUser?.id,
         },
       ]);
 
@@ -349,7 +383,6 @@ export const NewContractView: React.FC = () => {
               />
             </div>
 
-            {/* Community Name */}
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                 Community Name <span className="text-rose-500">*</span>
@@ -365,7 +398,6 @@ export const NewContractView: React.FC = () => {
               />
             </div>
 
-            {/* GPS Coordinates */}
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                 GPS Coordinates
@@ -699,6 +731,7 @@ export const NewContractView: React.FC = () => {
                   onMouseDown={(e) => startDrawing(e, 'customer')}
                   onMouseMove={(e) => draw(e, 'customer')}
                   onMouseUp={() => stopDrawing('customer')}
+                  onMouseLeave={() => stopDrawing('customer')}
                   onTouchStart={(e) => startDrawing(e, 'customer')}
                   onTouchMove={(e) => draw(e, 'customer')}
                   onTouchEnd={() => stopDrawing('customer')}
@@ -715,16 +748,39 @@ export const NewContractView: React.FC = () => {
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
                 Customer Thumbprint Photo <span className="text-slate-400 font-normal">(Optional)</span>
               </label>
+              <input
+                type="file"
+                ref={thumbprintInputRef}
+                accept="image/*"
+                capture="environment"
+                onChange={handleThumbprintUpload}
+                className="hidden"
+              />
               <button
                 type="button"
+                onClick={() => thumbprintInputRef.current?.click()}
                 className="w-full py-3 bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg flex items-center justify-center gap-2 transition-colors"
               >
                 <Camera className="w-4 h-4 text-slate-500" />
-                <span>Take / Upload Customer Thumbprint Photo</span>
+                <span>{thumbprintImage ? 'Change Thumbprint Photo' : 'Take / Upload Customer Thumbprint Photo'}</span>
               </button>
-              <div className="mt-2 border border-dashed border-slate-200 rounded-lg p-6 text-center text-xs text-slate-400">
-                No thumbprint captured (Optional)
-              </div>
+              
+              {thumbprintImage ? (
+                <div className="mt-3 relative border rounded-lg overflow-hidden max-w-xs mx-auto bg-slate-900 p-2 text-center">
+                  <img src={thumbprintImage} alt="Thumbprint Preview" className="max-h-40 mx-auto rounded object-contain" />
+                  <button
+                    type="button"
+                    onClick={() => setThumbprintImage(null)}
+                    className="mt-2 text-xs text-rose-400 hover:text-rose-300 font-medium underline"
+                  >
+                    Remove Photo
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-2 border border-dashed border-slate-200 rounded-lg p-6 text-center text-xs text-slate-400">
+                  No thumbprint captured (Optional)
+                </div>
+              )}
             </div>
 
             {/* Agent Signature Box */}
@@ -749,6 +805,7 @@ export const NewContractView: React.FC = () => {
                   onMouseDown={(e) => startDrawing(e, 'agent')}
                   onMouseMove={(e) => draw(e, 'agent')}
                   onMouseUp={() => stopDrawing('agent')}
+                  onMouseLeave={() => stopDrawing('agent')}
                   onTouchStart={(e) => startDrawing(e, 'agent')}
                   onTouchMove={(e) => draw(e, 'agent')}
                   onTouchEnd={() => stopDrawing('agent')}
@@ -762,28 +819,27 @@ export const NewContractView: React.FC = () => {
           </div>
         </div>
 
-        {/* ACTION BUTTONS */}
-        <div className="flex flex-col sm:flex-row gap-4 pt-4">
+        {/* Action Buttons */}
+        <div className="flex flex-col sm:flex-row items-center gap-4 pt-4">
           <button
             type="button"
             onClick={handleSaveDraft}
-            className="flex-1 py-3.5 px-6 rounded-xl border border-slate-300 bg-white text-slate-700 font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors shadow-sm"
+            className="w-full sm:w-1/2 py-3.5 px-4 border border-slate-300 rounded-xl font-bold text-slate-700 bg-white hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
           >
             <Save className="w-4 h-4 text-slate-500" />
             <span>Save Draft</span>
           </button>
-
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 py-3.5 px-6 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-sm transition-colors disabled:opacity-50"
+            className="w-full sm:w-1/2 py-3.5 px-4 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 transition-colors flex items-center justify-center gap-2 text-sm uppercase tracking-wider disabled:opacity-50 shadow-md shadow-orange-500/20"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
             ) : (
               <Send className="w-4 h-4" />
             )}
-            <span>{loading ? 'Submitting Contract...' : 'Submit Contract'}</span>
+            <span>{loading ? 'Submitting...' : 'Submit Contract'}</span>
           </button>
         </div>
       </form>

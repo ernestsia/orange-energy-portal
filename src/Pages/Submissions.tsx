@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, RefreshCw, CheckCircle2, Clock, XCircle, 
-  Eye, Filter, Check, X
+  Eye, Filter, Check, X, MapPin, User, FileText, Building
 } from 'lucide-react';
 import { supabase } from '../Lib/supabase';
 
-interface ContractRecord {
+export interface ContractRecord {
   id: string;
   customer_name: string;
   address: string;
@@ -31,7 +31,7 @@ interface ContractRecord {
   created_at: string;
 }
 
-export const SubmissionsView: React.FC = () => {
+export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }) => {
   const [submissions, setSubmissions] = useState<ContractRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -39,14 +39,29 @@ export const SubmissionsView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedContract, setSelectedContract] = useState<ContractRecord | null>(null);
 
+  const isAdmin = currentUser?.role?.toUpperCase() === 'ADMIN';
+
   // Fetch submissions from Supabase
   const fetchSubmissions = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('contracts')
         .select('*')
         .order('created_at', { ascending: false });
+
+      if (!isAdmin) {
+        const userName = currentUser?.fullName || currentUser?.username || '';
+        if (currentUser?.id && userName) {
+          query = query.or(`created_by.eq.${currentUser.id},agent_name.ilike.%${userName}%`);
+        } else if (currentUser?.id) {
+          query = query.eq('created_by', currentUser.id);
+        } else if (userName) {
+          query = query.ilike('agent_name', `%${userName}%`);
+        }
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setSubmissions(data || []);
@@ -59,10 +74,12 @@ export const SubmissionsView: React.FC = () => {
 
   useEffect(() => {
     fetchSubmissions();
-  }, []);
+  }, [currentUser]);
 
-  // Update Contract Status in Supabase
+  // Update Contract Status in Supabase (Restricted to Admin)
   const handleUpdateStatus = async (id: string, newStatus: 'approved' | 'rejected') => {
+    if (!isAdmin) return;
+
     setUpdatingId(id);
     try {
       const { error } = await supabase
@@ -128,7 +145,7 @@ export const SubmissionsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 font-sans max-w-6xl mx-auto">
+    <div className="space-y-6 font-sans max-w-6xl mx-auto pb-12">
       {/* Header */}
       <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -224,8 +241,8 @@ export const SubmissionsView: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(item.status)}</td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
-                        {/* Quick Approve/Reject for pending submissions */}
-                        {item.status?.toLowerCase() === 'pending' && (
+                        {/* Quick Approve/Reject ONLY for Admin users */}
+                        {isAdmin && item.status?.toLowerCase() === 'pending' && (
                           <>
                             <button
                               onClick={() => handleUpdateStatus(item.id, 'approved')}
@@ -265,62 +282,170 @@ export const SubmissionsView: React.FC = () => {
       {/* Detail & Review Modal */}
       {selectedContract && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-xl border border-slate-200">
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-xl border border-slate-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
               <div>
                 <h2 className="text-lg font-bold text-slate-900">Contract Verification</h2>
-                <p className="text-xs text-slate-500">ID: {selectedContract.id}</p>
+                <p className="text-xs text-slate-500 font-mono">ID: {selectedContract.id}</p>
               </div>
               <button
                 onClick={() => setSelectedContract(null)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
               >
                 <XCircle className="w-6 h-6" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div className="bg-slate-50 p-3 rounded-lg">
-                <span className="font-bold text-slate-500 uppercase text-[10px]">Customer Name</span>
-                <p className="text-slate-900 font-bold mt-0.5">{selectedContract.customer_name}</p>
+            <div className="space-y-6 text-xs">
+              {/* Customer Details */}
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-orange-600 mb-2 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5" /> Customer Information
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">Customer Name</span>
+                    <p className="text-slate-900 font-bold mt-0.5">{selectedContract.customer_name}</p>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">Primary Phone</span>
+                    <p className="text-slate-900 font-bold font-mono mt-0.5">{selectedContract.phone_number}</p>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">Secondary Phone</span>
+                    <p className="text-slate-900 font-mono mt-0.5">{selectedContract.phone_number_2 || 'N/A'}</p>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">ID Type & Number</span>
+                    <p className="text-slate-900 font-medium mt-0.5">
+                      <span className="capitalize">{selectedContract.id_type?.replace(/_/g, ' ')}</span> - {selectedContract.id_number}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">Email Address</span>
+                    <p className="text-slate-900 mt-0.5">{selectedContract.email_address || 'N/A'}</p>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">Number of Kits</span>
+                    <p className="text-slate-900 font-bold mt-0.5">{selectedContract.number_of_kits}</p>
+                  </div>
+                </div>
               </div>
-              <div className="bg-slate-50 p-3 rounded-lg">
-                <span className="font-bold text-slate-500 uppercase text-[10px]">Phone Number</span>
-                <p className="text-slate-900 font-bold mt-0.5">{selectedContract.phone_number}</p>
+
+              {/* Location Details */}
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-orange-600 mb-2 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" /> Address & Location
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">Community</span>
+                    <p className="text-slate-900 font-medium mt-0.5">{selectedContract.community}</p>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">Street Address</span>
+                    <p className="text-slate-900 mt-0.5">{selectedContract.address}</p>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">GPS Coordinates</span>
+                    <p className="text-slate-900 font-mono mt-0.5">{selectedContract.gps_coordinates || 'N/A'}</p>
+                  </div>
+                </div>
               </div>
-              <div className="bg-slate-50 p-3 rounded-lg">
-                <span className="font-bold text-slate-500 uppercase text-[10px]">ID Type & Number</span>
-                <p className="text-slate-900 font-medium mt-0.5">
-                  {selectedContract.id_type} - {selectedContract.id_number}
-                </p>
+
+              {/* Offer & Agent Details */}
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-orange-600 mb-2 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5" /> Offer & Administrative Details
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">Selected Offer</span>
+                    <p className="text-slate-900 font-bold mt-0.5 capitalize">
+                      {selectedContract.selected_offer?.replace(/_/g, ' ')}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">Agent Name & Contact</span>
+                    <p className="text-slate-900 font-medium mt-0.5">
+                      {selectedContract.agent_name} ({selectedContract.agent_contact})
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] block">Orange Shop & File No.</span>
+                    <p className="text-slate-900 mt-0.5">
+                      {selectedContract.orange_shop} {selectedContract.file_number ? `(${selectedContract.file_number})` : ''}
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div className="bg-slate-50 p-3 rounded-lg">
-                <span className="font-bold text-slate-500 uppercase text-[10px]">Selected Offer</span>
-                <p className="text-slate-900 font-medium mt-0.5 capitalize">
-                  {selectedContract.selected_offer?.replace(/_/g, ' ')}
-                </p>
-              </div>
+
+              {/* Signatures */}
+              {(selectedContract.customer_signature || selectedContract.agent_signature) && (
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-orange-600 mb-2">
+                    Digital Signatures
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {selectedContract.customer_signature && (
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-center">
+                        <span className="font-bold text-slate-500 uppercase text-[10px] block mb-2">
+                          Customer Signature
+                        </span>
+                        <img
+                          src={selectedContract.customer_signature}
+                          alt="Customer Signature"
+                          className="max-h-24 mx-auto object-contain bg-white rounded border border-slate-200 p-1"
+                        />
+                      </div>
+                    )}
+                    {selectedContract.agent_signature && (
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-center">
+                        <span className="font-bold text-slate-500 uppercase text-[10px] block mb-2">
+                          Agent Signature
+                        </span>
+                        <img
+                          src={selectedContract.agent_signature}
+                          alt="Agent Signature"
+                          className="max-h-24 mx-auto object-contain bg-white rounded border border-slate-200 p-1"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Modal Admin Decision Bar */}
+            {/* Modal Decision / Footer */}
             <div className="mt-6 border-t border-slate-100 pt-4 flex items-center justify-between">
               <div>{getStatusBadge(selectedContract.status)}</div>
-              <div className="flex items-center gap-2">
+              
+              {/* Approval Buttons ONLY for ADMIN */}
+              {isAdmin ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleUpdateStatus(selectedContract.id, 'rejected')}
+                    disabled={updatingId === selectedContract.id}
+                    className="px-4 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold rounded-lg transition-colors"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => handleUpdateStatus(selectedContract.id, 'approved')}
+                    disabled={updatingId === selectedContract.id}
+                    className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold rounded-lg transition-colors shadow-sm"
+                  >
+                    Approve
+                  </button>
+                </div>
+              ) : (
                 <button
-                  onClick={() => handleUpdateStatus(selectedContract.id, 'rejected')}
-                  disabled={updatingId === selectedContract.id}
-                  className="px-4 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold rounded-lg transition-colors"
+                  onClick={() => setSelectedContract(null)}
+                  className="px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 text-xs font-bold rounded-lg transition-colors"
                 >
-                  Reject
+                  Close
                 </button>
-                <button
-                  onClick={() => handleUpdateStatus(selectedContract.id, 'approved')}
-                  disabled={updatingId === selectedContract.id}
-                  className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold rounded-lg transition-colors"
-                >
-                  Approve
-                </button>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -328,3 +453,5 @@ export const SubmissionsView: React.FC = () => {
     </div>
   );
 };
+
+export default SubmissionsView;

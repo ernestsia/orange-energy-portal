@@ -1,216 +1,199 @@
 import React, { useState } from 'react';
 import { supabase } from '../Lib/supabase';
-import { Eye, EyeOff, Lock, Mail, AlertCircle, Loader2 } from 'lucide-react';
+import { User, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 
 interface LoginProps {
   onLoginSuccess?: () => void;
 }
 
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState(''); // Accepts username or email
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setErrorMessage(null);
+    setErrorMsg('');
 
     try {
+      let loginEmail = identifier.trim();
+
+      // If input does not contain '@', treat it as a username and resolve the email
+      if (!loginEmail.includes('@')) {
+        const { data: resolvedEmail, error: rpcError } = await supabase
+          .rpc('get_email_by_identifier', { identifier: loginEmail });
+
+        if (rpcError || !resolvedEmail) {
+          throw new Error('Username not found. Please check your username.');
+        }
+
+        loginEmail = resolvedEmail;
+      }
+
+      // Authenticate with Supabase using resolved email
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: loginEmail,
+        password: password,
       });
 
       if (error) throw error;
 
-      if (data.session) {
-        if (onLoginSuccess) {
-          onLoginSuccess();
-        } else {
-          window.location.reload();
-        }
+      console.log('Login successful:', data.user);
+
+      if (onLoginSuccess) {
+        onLoginSuccess();
       }
+
     } catch (err: any) {
-      console.error('Login error:', err);
-      setErrorMessage(
-        err.message || 'Failed to authenticate. Please check your credentials.'
-      );
+      setErrorMsg(err.message || 'Failed to sign in');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-slate-900 font-sans text-slate-800">
-      {/* Left Branding & Visual Hero Column with Contract Sheet & Pen Focus */}
-      <div 
-        className="hidden lg:flex lg:w-1/2 relative bg-cover bg-center flex-col justify-between p-12 overflow-hidden border-r border-slate-800"
-        style={{
-          // High quality image featuring paper contract, clipboard, and pen (no people)
-          backgroundImage: `url('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1200&q=80')`
-        }}
-      >
-        {/* Dark Gradient Overlay for optimal contrast */}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/85 to-slate-950/65 pointer-events-none" />
+    <div className="min-h-screen w-full flex bg-[#0B0F19] font-sans overflow-hidden">
+      {/* Left Section: Centered Branding & Title */}
+      <div className="hidden lg:flex flex-col justify-between w-1/2 bg-[#0B0F19] p-12 text-white relative z-10 border-r border-slate-800/60">
+        {/* Subtle Gradient Glow */}
+        <div className="absolute top-0 left-0 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
 
-        {/* Top Tag Header */}
-        <div className="relative z-10 flex items-center justify-between">
-          <span className="text-xs font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-3 py-1.5 rounded-full border border-orange-500/20 backdrop-blur-md">
-            Liberia Operations Portal
-          </span>
-        </div>
-
-        {/* Hero Branding Content */}
-        <div className="relative z-10 space-y-6 max-w-lg">
-          <img
-            src="/oe.png"
-            alt="Orange Energies Logo"
-            className="h-16 w-auto object-contain filter drop-shadow-md brightness-0 invert"
-          />
-          <h1 className="text-4xl font-black text-white leading-tight tracking-tight">
-            Seamless Digital Subscriptions & Field Onboarding
-          </h1>
-          <p className="text-slate-200 text-sm leading-relaxed font-medium">
-            Digitize customer subscription contracts, authorize solar system installations, and manage field agent workflows across Liberia in real time.
-          </p>
-
-          <div className="pt-4 grid grid-cols-3 gap-3 border-t border-slate-700/80">
-            <div>
-              <div className="text-orange-500 font-black text-lg">Instant</div>
-              <div className="text-slate-300 text-xs font-medium">Contract Signings</div>
-            </div>
-            <div>
-              <div className="text-orange-500 font-black text-lg">Verified</div>
-              <div className="text-slate-300 text-xs font-medium">Subscriptions</div>
-            </div>
-            <div>
-              <div className="text-orange-500 font-black text-lg">Field</div>
-              <div className="text-slate-300 text-xs font-medium">Installer Sync</div>
-            </div>
+        {/* Brand Header (Top Left) */}
+        <div className="flex items-center gap-3">
+          {/* OE Logo Image / Icon */}
+          <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center font-extrabold text-white text-2xl shadow-lg shadow-orange-500/30 overflow-hidden">
+            <img 
+              src="/oe.png" 
+              alt="Orange Energy Logo" 
+              className="w-full h-full object-contain p-1" 
+              onError={(e) => {
+                // Fallback to text logo if image fails to load
+                e.currentTarget.style.display = 'none';
+              }} 
+            />
+            <span className="font-black text-white text-xl">OE</span>
+          </div>
+          <div>
+            <h2 className="text-lg font-black uppercase tracking-tight text-white leading-none">Orange Energy</h2>
+            <p className="text-[10px] text-orange-400 font-bold uppercase tracking-wider mt-1">Liberia Digital Portal</p>
           </div>
         </div>
 
-        {/* Footer Note */}
-        <div className="relative z-10 text-xs text-slate-400 font-medium">
-          &copy; {new Date().getFullYear()} Orange Energies Liberia. All rights reserved.
+        {/* Centralized Heading Wording */}
+        <div className="my-auto text-center px-6">
+          <h1 className="text-5xl font-black text-white tracking-tight leading-tight max-w-xl mx-auto">
+            Orange Energy Subscriber Contract
+          </h1>
+        </div>
+
+        {/* Footer Text */}
+        <div className="text-[11px] text-slate-500 font-bold tracking-widest uppercase text-center lg:text-left">
+          Authorized Field & Admin Operations
         </div>
       </div>
 
-      {/* Right Form Column */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 bg-slate-50">
-        <div className="w-full max-w-md space-y-8 bg-white p-8 sm:p-10 rounded-3xl shadow-xl border border-slate-200/80">
-          {/* Form Header */}
-          <div className="text-center space-y-3">
-            <div className="flex justify-center mb-2">
-              <img
-                src="/oe.png"
-                alt="Orange Energies Logo"
-                className="h-12 w-auto object-contain"
+      {/* Right Section: Installer & Customer Background Image */}
+      <div 
+        className="flex-1 flex items-center justify-center p-6 sm:p-12 relative bg-cover bg-center bg-no-repeat bg-slate-900"
+        style={{
+          backgroundImage: `linear-gradient(to right, rgba(11, 15, 25, 0.95) 0%, rgba(11, 15, 25, 0.4) 40%, rgba(11, 15, 25, 0.6) 100%), url('/installer-signing.jpg'), url('/installer-signing.jfif')`
+        }}
+      >
+        <div className="w-full max-w-md space-y-6 relative z-10">
+          {/* Mobile Header Logo */}
+          <div className="lg:hidden flex items-center justify-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center font-extrabold text-white text-xl shadow-md overflow-hidden">
+              <img 
+                src="/oe.png" 
+                alt="Orange Energy Logo" 
+                className="w-full h-full object-contain p-1" 
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }} 
               />
+              <span className="font-black text-white text-lg">OE</span>
             </div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-              Secure Access Portal
-            </h2>
-            <p className="text-xs font-medium text-slate-500">
-              Sign in to manage customer contracts, agents, and system installations.
-            </p>
+            <div className="text-left">
+              <h2 className="text-lg font-black uppercase text-white tracking-tight">Orange Energy</h2>
+              <p className="text-[10px] text-orange-400 font-bold uppercase tracking-wider">Subscriber Contract</p>
+            </div>
           </div>
 
-          {/* Error Banner */}
-          {errorMessage && (
-            <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3.5 rounded-xl">
-              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-              <div className="font-semibold">{errorMessage}</div>
-            </div>
-          )}
-
-          {/* Form Body */}
-          <form onSubmit={handleLogin} className="space-y-5 text-xs font-medium">
+          {/* Form Card */}
+          <div className="bg-[#111625]/90 backdrop-blur-xl border border-slate-800/80 p-8 rounded-2xl shadow-2xl space-y-6">
             <div>
-              <label className="block text-slate-700 font-extrabold mb-1.5 uppercase tracking-wider text-[11px]">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@orange.lr"
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-all"
-                />
-              </div>
+              <h3 className="text-2xl font-black text-white tracking-tight">Sign In</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Enter your credentials to access your field portal.
+              </p>
             </div>
 
-            <div>
-              <label className="block text-slate-700 font-extrabold mb-1.5 uppercase tracking-wider text-[11px]">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+            {errorMsg && (
+              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium flex items-center gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                <span>{errorMsg}</span>
               </div>
-            </div>
+            )}
 
-            <div className="flex items-center justify-between text-xs pt-1">
-              <label className="flex items-center gap-2 cursor-pointer text-slate-600 font-semibold">
-                <input
-                  type="checkbox"
-                  className="rounded border-slate-300 text-orange-500 focus:ring-orange-500 w-3.5 h-3.5"
-                />
-                <span>Remember me</span>
-              </label>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Username or Email
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="e.g. ernest"
+                    required
+                    className="w-full pl-10 pr-4 py-2.5 bg-[#0B0F19]/90 border border-slate-800 rounded-xl text-xs font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 transition-all"
+                  />
+                </div>
+              </div>
 
-              <a
-                href="#forgot-password"
-                onClick={(e) => {
-                  e.preventDefault();
-                  alert('Please contact your System Administrator to reset your password.');
-                }}
-                className="text-orange-600 font-bold hover:underline"
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className="w-full pl-10 pr-4 py-2.5 bg-[#0B0F19]/90 border border-slate-800 rounded-xl text-xs font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
               >
-                Forgot password?
-              </a>
-            </div>
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Signing in...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign In</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3.5 bg-orange-500 hover:bg-orange-600 active:scale-[0.99] text-white font-extrabold text-xs rounded-xl shadow-lg shadow-orange-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Authenticating...</span>
-                </>
-              ) : (
-                <span>Sign In to Portal</span>
-              )}
-            </button>
-          </form>
-
-          {/* Footer Assistance */}
-          <div className="pt-4 border-t border-slate-100 text-center text-[11px] text-slate-400 font-semibold">
-            Need account authorization? <span className="text-slate-600">Contact IT Operations Admin</span>
+          <div className="text-center text-[11px] text-slate-500 font-medium">
+            Orange Energy Liberia • Field Operations Portal
           </div>
         </div>
       </div>

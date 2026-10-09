@@ -1,420 +1,342 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../Lib/supabase';
-import type { UserProfile } from '../types';
-import { 
-  Users, 
-  UserPlus, 
-  Search, 
-  ShieldAlert, 
-  CheckCircle2, 
-  XCircle, 
-  Edit3, 
-  KeyRound,
-  RefreshCw 
-} from 'lucide-react';
+import { UserPlus, Key, Phone, User, AtSign, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, Send, Users } from 'lucide-react';
 
-export const UserManagementView: React.FC = () => {
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [filterRole, setFilterRole] = useState<string>('ALL');
+export default function UserManagementView() {
+  const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
+  const [phone, setPhone] = useState('');
+  const [role, setRole] = useState<'OE Installer' | 'Admin'>('OE Installer');
+  const [defaultPassword, setDefaultPassword] = useState('Orange@1234');
+  const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Modal states
-  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
-  const [submitting, setSubmitting] = useState<boolean>(false);
+  // Registered Users list
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [fetchingUsers, setFetchingUsers] = useState(false);
 
-  // Form state
-  const [formData, setFormData] = useState({
-    full_name: '',
-    email: '',
-    phone_number: '',
-    role: 'FIELD_AGENT',
-    status: 'active' as 'active' | 'inactive',
-  });
+  useEffect(() => {
+    fetchUsersList();
+  }, []);
 
-  const fetchUsers = async () => {
+  // Fetch unique users from public.profiles table
+  const fetchUsersList = async () => {
+    setFetchingUsers(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      // De-duplicate users by unique ID or unique Email
+      const uniqueUsers = Array.from(
+        new Map(data.map((item) => [item.id || item.email, item])).values()
+      );
+      setUsersList(uniqueUsers);
+    }
+    setFetchingUsers(false);
+  };
+
+  const formatPhoneNumber = (inputPhone: string) => {
+    let cleaned = inputPhone.replace(/[^0-9]/g, '');
+    if (cleaned.startsWith('0')) {
+      cleaned = '231' + cleaned.slice(1);
+    } else if (cleaned.length === 8 || cleaned.length === 9) {
+      cleaned = '231' + cleaned;
+    }
+    return cleaned;
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
     setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('full_name', { ascending: true });
+    setStatusMessage(null);
 
-      if (error) throw error;
-      if (data) setUsers(data as UserProfile[]);
+    const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '');
+    const generatedEmail = `${cleanUsername}@orange.lr`;
+    const formattedPhone = formatPhoneNumber(phone);
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: generatedEmail,
+        password: defaultPassword,
+        options: {
+          data: {
+            full_name: fullName,
+            username: cleanUsername,
+            phone_number: formattedPhone,
+            role: role,
+            must_change_password: true,
+          },
+        },
+      });
+
+      if (error) {
+        setStatusMessage({ type: 'error', text: `Supabase Error: ${error.message}` });
+        setLoading(false);
+        return;
+      }
+
+      if (data.user) {
+        // Upsert into profiles table with explicit username field
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          email: generatedEmail,
+          full_name: fullName,
+          username: cleanUsername,
+          phone_number: formattedPhone,
+          role: role,
+        });
+
+        sendWhatsAppCredentials(fullName, cleanUsername, role, defaultPassword, formattedPhone);
+
+        setStatusMessage({
+          type: 'success',
+          text: `Account created for ${fullName} (${role})! Launching WhatsApp...`,
+        });
+
+        setFullName('');
+        setUsername('');
+        setPhone('');
+        setRole('OE Installer');
+        setDefaultPassword('Orange@1234');
+        fetchUsersList();
+      }
     } catch (err: any) {
-      console.error('Error fetching profiles:', err);
+      setStatusMessage({ type: 'error', text: 'Unexpected error: ' + err.message });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+  const sendWhatsAppCredentials = (
+    name: string,
+    uname: string,
+    userRole: string,
+    pass: string,
+    phoneNum: string
+  ) => {
+    const rawMessage =
+      `*Orange Energy Portal Credentials*\n\n` +
+      `Hello ${name},\n` +
+      `Your account credentials have been updated.\n\n` +
+      `*Full Name:* ${name}\n` +
+      `*Username:* ${uname}\n` +
+      `*Role:* ${userRole}\n` +
+      `*Temporary Password:* ${pass}\n\n` +
+      `Please log in to the portal and update your password immediately.`;
 
-  const handleOpenCreateModal = () => {
-    setEditingUser(null);
-    setFormData({
-      full_name: '',
-      email: '',
-      phone_number: '',
-      role: 'FIELD_AGENT',
-      status: 'active',
+    const whatsappUrl = `https://api.whatsapp.com/send?phone=${phoneNum}&text=${encodeURIComponent(rawMessage)}`;
+    window.open(whatsappUrl, '_blank');
+  };
+
+  const handleResendPassword = async (targetUser: any) => {
+    const newTempPassword = `Orange@${Math.floor(1000 + Math.random() * 9000)}`;
+    const formattedPhone = formatPhoneNumber(targetUser.phone_number || targetUser.phone || '');
+    const activeUsername = targetUser.username || targetUser.email?.split('@')[0] || 'user';
+
+    setStatusMessage({
+      type: 'success',
+      text: `New password (${newTempPassword}) generated for ${targetUser.full_name}. Launching WhatsApp...`,
     });
-    setIsModalOpen(true);
+
+    sendWhatsAppCredentials(
+      targetUser.full_name || 'User',
+      activeUsername,
+      targetUser.role || 'OE Installer',
+      newTempPassword,
+      formattedPhone
+    );
   };
-
-  const handleOpenEditModal = (user: UserProfile) => {
-    setEditingUser(user);
-    setFormData({
-      full_name: user.full_name || '',
-      email: user.email || '',
-      phone_number: user.phone_number || (user as any).phone || '',
-      role: user.role || 'FIELD_AGENT',
-      status: user.status || 'active',
-    });
-    setIsModalOpen(true);
-  };
-
-  const handleToggleStatus = async (user: UserProfile) => {
-    const newStatus = user.status === 'active' ? 'inactive' : 'active';
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ status: newStatus })
-        .eq('id', user.id);
-
-      if (error) throw error;
-      fetchUsers();
-    } catch (err: any) {
-      alert(err.message || 'Failed to update user status.');
-    }
-  };
-
-  const handleSaveUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-
-    try {
-      if (editingUser) {
-        // Build payload dynamically to handle schema variations safely
-        const updatePayload: Record<string, any> = {
-          full_name: formData.full_name,
-          role: formData.role,
-          status: formData.status,
-          phone_number: formData.phone_number,
-        };
-
-        let { error } = await supabase
-          .from('profiles')
-          .update(updatePayload)
-          .eq('id', editingUser.id);
-
-        // Fallback if 'phone_number' column doesn't exist in schema
-        if (error && error.message?.includes('phone_number')) {
-          delete updatePayload.phone_number;
-          updatePayload.phone = formData.phone_number;
-          const retry = await supabase.from('profiles').update(updatePayload).eq('id', editingUser.id);
-          error = retry.error;
-        }
-
-        if (error) throw error;
-      } else {
-        // 1. Generate temporary password
-        const tempPassword = `Orange@${Math.floor(100000 + Math.random() * 900000)}`;
-
-        // 2. Create user in Supabase Auth
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: formData.email,
-          password: tempPassword,
-          options: {
-            data: {
-              full_name: formData.full_name,
-              role: formData.role,
-            },
-          },
-        });
-
-        if (authError) throw authError;
-
-        // 3. Insert into profiles table with fallbacks for column mismatches
-        if (authData.user) {
-          const profilePayload: Record<string, any> = {
-            id: authData.user.id,
-            full_name: formData.full_name,
-            email: formData.email,
-            role: formData.role,
-            status: 'active',
-            phone_number: formData.phone_number,
-          };
-
-          let { error: profileError } = await supabase
-            .from('profiles')
-            .insert(profilePayload);
-
-          // Retry without 'phone_number' if column missing in database
-          if (profileError && profileError.message?.includes('phone_number')) {
-            delete profilePayload.phone_number;
-            profilePayload.phone = formData.phone_number;
-            const fallbackResult = await supabase.from('profiles').insert(profilePayload);
-            profileError = fallbackResult.error;
-          }
-
-          if (profileError) throw profileError;
-
-          // 4. Safely attempt reset email without crashing if SMTP rate limits hit
-          try {
-            await supabase.auth.resetPasswordForEmail(formData.email, {
-              redirectTo: `${window.location.origin}/update-password`,
-            });
-          } catch (emailErr) {
-            console.warn('Password reset email skipped due to SMTP limits:', emailErr);
-          }
-
-          alert(`Account created successfully!\n\nEmail: ${formData.email}\nTemp Password: ${tempPassword}`);
-        }
-      }
-
-      setIsModalOpen(false);
-      fetchUsers();
-    } catch (err: any) {
-      console.error('Error saving user:', err);
-      alert(err.message || 'Failed to save user.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const filteredUsers = users.filter((u) => {
-    const matchesSearch = 
-      u.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesRole = filterRole === 'ALL' || u.role === filterRole;
-    return matchesSearch && matchesRole;
-  });
 
   return (
-    <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center font-bold">
-            <Users className="w-5 h-5" />
+    <div className="space-y-8 max-w-4xl mx-auto">
+      {/* Create User Form */}
+      <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
+        <div className="flex items-center gap-3 pb-6 mb-6 border-b border-slate-100">
+          <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+            <UserPlus size={20} />
           </div>
           <div>
-            <h2 className="text-lg font-black text-slate-900 leading-tight">User Management Portal</h2>
-            <p className="text-xs text-slate-500 font-medium">Control access levels, monitor status, and enforce onboarding security.</p>
+            <h3 className="font-extrabold text-slate-900 text-lg">Create User Account</h3>
+            <p className="text-xs text-slate-500">Dispatch login credentials straight to user's WhatsApp.</p>
           </div>
         </div>
 
-        <button
-          onClick={handleOpenCreateModal}
-          className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-md shadow-orange-500/20 transition-all self-start sm:self-auto"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>Provision New User</span>
-        </button>
-      </div>
-
-      {/* Controls & Search */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search by name or email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <select
-            value={filterRole}
-            onChange={(e) => setFilterRole(e.target.value)}
-            className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+        {statusMessage && (
+          <div
+            className={`mb-6 p-4 rounded-xl border flex items-start gap-3 text-xs font-medium ${
+              statusMessage.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}
           >
-            <option value="ALL">All Roles</option>
-            <option value="ADMIN">Admin</option>
-            <option value="SUPERVISOR">Supervisor</option>
-            <option value="FIELD_AGENT">Field Agent</option>
-          </select>
+            {statusMessage.type === 'success' ? (
+              <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle size={18} className="text-rose-600 shrink-0" />
+            )}
+            <span>{statusMessage.text}</span>
+          </div>
+        )}
 
-          <button
-            onClick={fetchUsers}
-            className="p-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl transition-colors"
-            title="Refresh Users"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-      </div>
-
-      {/* Users Table */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase tracking-wider">
-              <tr>
-                <th className="px-6 py-3.5">User</th>
-                <th className="px-6 py-3.5">Phone</th>
-                <th className="px-6 py-3.5">Role</th>
-                <th className="px-6 py-3.5">Status</th>
-                <th className="px-6 py-3.5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="text-center py-10 text-slate-400">
-                    Loading users directory...
-                  </td>
-                </tr>
-              ) : filteredUsers.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="text-center py-10 text-slate-400">
-                    No users found matching your query.
-                  </td>
-                </tr>
-              ) : (
-                filteredUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-bold text-slate-900">{u.full_name || 'Unnamed User'}</div>
-                      <div className="text-[11px] text-slate-400">{u.email}</div>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500 font-semibold">
-                      {u.phone_number || (u as any).phone || '-'}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                        u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' :
-                        u.role === 'SUPERVISOR' ? 'bg-blue-100 text-blue-700' :
-                        'bg-slate-100 text-slate-700'
-                      }`}>
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold ${
-                        u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                      }`}>
-                        {u.status === 'active' ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                        <span className="uppercase">{u.status}</span>
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right space-x-2">
-                      <button
-                        onClick={() => handleOpenEditModal(u)}
-                        className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors"
-                        title="Edit User"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleToggleStatus(u)}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          u.status === 'active' ? 'hover:bg-rose-50 text-rose-600' : 'hover:bg-emerald-50 text-emerald-600'
-                        }`}
-                        title={u.status === 'active' ? 'Deactivate User' : 'Activate User'}
-                      >
-                        <ShieldAlert className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Modal Overlay */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <h3 className="text-base font-black text-slate-900">
-              {editingUser ? 'Edit User Profile' : 'Provision New System User'}
-            </h3>
-
-            <form onSubmit={handleSaveUser} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Full Name</label>
+        <form onSubmit={handleCreateUser} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Full Name
+              </label>
+              <div className="relative">
+                <User size={18} className="absolute left-3.5 top-3 text-slate-400" />
                 <input
                   type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
                   required
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  placeholder="e.g. Jean-Luc Koffi"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                  placeholder="e.g. Mary Johnson"
                 />
               </div>
+            </div>
 
-              {!editingUser && (
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    required
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="user@orange.lr"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Phone Number</label>
-                  <input
-                    type="text"
-                    value={formData.phone_number}
-                    onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
-                    placeholder="0777777557"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">System Role</label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 font-bold"
-                  >
-                    <option value="FIELD_AGENT">Field Agent</option>
-                    <option value="SUPERVISOR">Supervisor</option>
-                    <option value="ADMIN">Admin</option>
-                  </select>
-                </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Username
+              </label>
+              <div className="relative">
+                <AtSign size={18} className="absolute left-3.5 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                  placeholder="e.g. mary"
+                />
               </div>
-
-              <div className="flex justify-end gap-2 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-lg transition-colors"
-                >
-                  {submitting ? 'Saving...' : editingUser ? 'Update Profile' : 'Create User Account'}
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                User Role
+              </label>
+              <div className="relative">
+                <ShieldCheck size={18} className="absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as 'OE Installer' | 'Admin')}
+                  required
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 appearance-none"
+                >
+                  <option value="OE Installer">OE Installer</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                WhatsApp Phone
+              </label>
+              <div className="relative">
+                <Phone size={18} className="absolute left-3.5 top-3 text-slate-400" />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  required
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                  placeholder="0770731138"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Temporary Password
+              </label>
+              <div className="relative">
+                <Key size={18} className="absolute left-3.5 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={defaultPassword}
+                  onChange={(e) => setDefaultPassword(e.target.value)}
+                  required
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-sm shadow-md shadow-orange-500/20 transition disabled:opacity-50"
+          >
+            {loading ? 'Creating Account...' : 'Create Account & Launch WhatsApp'}
+          </button>
+        </form>
+      </div>
+
+      {/* Directory & Password Recovery Panel */}
+      <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
+        <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+              <Users size={20} />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-slate-900 text-base">User Directory & Password Recovery</h3>
+              <p className="text-xs text-slate-500">Resend credentials via WhatsApp if a user forgets their password.</p>
+            </div>
+          </div>
+          <button
+            onClick={fetchUsersList}
+            className={`p-2 text-slate-400 hover:text-orange-500 transition ${fetchingUsers ? 'animate-spin' : ''}`}
+            title="Refresh Directory"
+          >
+            <RefreshCw size={18} />
+          </button>
         </div>
-      )}
+
+        {usersList.length === 0 ? (
+          <p className="text-xs text-slate-400 italic text-center py-4">No registered users found.</p>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {usersList.map((usr) => {
+              // Extract username safely from username field OR email prefix
+              const displayUsername = usr.username || (usr.email ? usr.email.split('@')[0] : 'user');
+
+              return (
+                <div key={usr.id || usr.email} className="py-3.5 flex items-center justify-between">
+                  <div>
+                    <div className="font-extrabold text-sm text-slate-900">{usr.full_name || 'Unnamed User'}</div>
+                    <div className="text-xs text-slate-500 flex items-center gap-1.5 font-medium mt-0.5">
+                      <span className="font-bold text-slate-700">@{displayUsername}</span>
+                      <span>•</span>
+                      <span className="font-extrabold text-orange-600 uppercase text-[10px] bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                        {usr.role || 'OE Installer'}
+                      </span>
+                      <span>•</span>
+                      <span>{usr.phone_number || usr.phone || 'No Phone'}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleResendPassword(usr)}
+                    className="px-3.5 py-2 bg-slate-50 hover:bg-orange-500 hover:text-white text-slate-700 font-bold text-xs rounded-xl flex items-center gap-2 transition border border-slate-200 shadow-sm"
+                  >
+                    <Send size={14} />
+                    <span>Resend Password (WhatsApp)</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
-};
-
-export default UserManagementView;
+}
