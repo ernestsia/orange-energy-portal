@@ -99,22 +99,41 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
     return matchesSearch;
   });
 
-  // Robust signature check looking through all possible column names
-  const custSig = selectedContract 
+  // Helper function to validate if a signature string contains actual drawn pixel data
+  const isValidSignature = (sig: any): boolean => {
+    if (!sig || typeof sig !== 'string') return false;
+    const trimmed = sig.trim();
+    if (trimmed === '' || trimmed === 'null' || trimmed === 'undefined') return false;
+    if (trimmed.startsWith('data:image') || trimmed.startsWith('http')) {
+      return trimmed.length > 1500; 
+    }
+    return trimmed.length > 100;
+  };
+
+  const formatSignatureSrc = (sig: string): string => {
+    if (!sig) return '';
+    if (sig.startsWith('data:image') || sig.startsWith('http')) return sig;
+    return `data:image/png;base64,${sig}`;
+  };
+
+  const rawCustomerSig = selectedContract 
     ? (selectedContract as any).customer_signature || 
+      (selectedContract as any).customerSignature || 
       (selectedContract as any).signature_url || 
       (selectedContract as any).customer_sig || 
-      (selectedContract as any).signature ||
-      (selectedContract as any).customerSignature
+      (selectedContract as any).signature
     : null;
 
-  const agentSig = selectedContract 
+  const rawAgentSig = selectedContract 
     ? (selectedContract as any).agent_signature || 
+      (selectedContract as any).agentSignature || 
       (selectedContract as any).installer_signature || 
-      (selectedContract as any).agent_sig ||
-      (selectedContract as any).installer_sig ||
-      (selectedContract as any).agentSignature
+      (selectedContract as any).agent_sig || 
+      (selectedContract as any).installer_sig
     : null;
+
+  const custSig = isValidSignature(rawCustomerSig) ? formatSignatureSrc(rawCustomerSig) : null;
+  const agentSig = isValidSignature(rawAgentSig) ? formatSignatureSrc(rawAgentSig) : null;
 
   return (
     <div className="space-y-6 font-sans max-w-7xl mx-auto pb-12">
@@ -373,7 +392,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
                     Customer Signature
                   </span>
                   {custSig ? (
-                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex items-center justify-center">
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex items-center justify-center min-h-[96px]">
                       <img
                         src={custSig}
                         alt="Customer Signature"
@@ -394,7 +413,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
                     OE Installer / Agent Signature
                   </span>
                   {agentSig ? (
-                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex items-center justify-center">
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex items-center justify-center min-h-[96px]">
                       <img
                         src={agentSig}
                         alt="Agent Signature"
