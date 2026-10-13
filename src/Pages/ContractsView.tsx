@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, RefreshCw, 
-  Eye, Wrench, X, Printer, ShieldCheck, FileText, User, MapPin 
+  Eye, Wrench, X, Printer, ShieldCheck, FileText, User, MapPin, Download, Filter 
 } from 'lucide-react';
 import { supabase } from '../Lib/supabase';
 
@@ -41,6 +41,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
   const [contracts, setContracts] = useState<ContractRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [selectedInstaller, setSelectedInstaller] = useState<string>('ALL');
   const [selectedContract, setSelectedContract] = useState<ContractRecord | null>(null);
 
   const fetchContracts = async () => {
@@ -88,7 +89,15 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
     };
   }, []);
 
+  // Extract unique list of installers for the filter dropdown
+  const uniqueInstallers = Array.from(
+    new Set(contracts.map((c) => c.agent_name || c.assigned_installer).filter(Boolean))
+  );
+
   const filteredContracts = contracts.filter((item) => {
+    const installerName = item.agent_name || item.assigned_installer || 'Unassigned';
+    const matchesInstaller = selectedInstaller === 'ALL' || installerName === selectedInstaller;
+
     const matchesSearch =
       item.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.phone_number?.includes(searchTerm) ||
@@ -96,10 +105,46 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
       item.assigned_installer?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.community?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    return matchesSearch;
+    return matchesInstaller && matchesSearch;
   });
 
-  // Helper function to validate if a signature string contains actual drawn pixel data
+  // Export all submitted contracts as CSV
+  const handleExportCSV = () => {
+    if (contracts.length === 0) return;
+
+    const headers = [
+      'ID', 'Customer Name', 'Community', 'Address', 'GPS', 'Phone', 'Phone 2',
+      'ID Type', 'ID Number', 'Offer', 'Kits', 'Agreement Date', 'Orange Shop', 'Agent Name', 'Agent Contact'
+    ];
+
+    const rows = contracts.map((c) => [
+      c.id,
+      `"${c.customer_name || ''}"`,
+      `"${c.community || ''}"`,
+      `"${c.address || ''}"`,
+      `"${c.gps_coordinates || ''}"`,
+      c.phone_number,
+      c.phone_number_2 || '',
+      c.id_type,
+      c.id_number,
+      c.selected_offer,
+      c.number_of_kits,
+      c.agreement_date,
+      `"${c.orange_shop || ''}"`,
+      `"${c.agent_name || c.assigned_installer || ''}"`,
+      c.agent_contact || c.installer_contact || ''
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Orange_Energy_Contracts_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const isValidSignature = (sig: any): boolean => {
     if (!sig || typeof sig !== 'string') return false;
     const trimmed = sig.trim();
@@ -137,23 +182,32 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
 
   return (
     <div className="space-y-6 font-sans max-w-7xl mx-auto pb-12">
-      {/* Header */}
+      {/* Header & Actions */}
       <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Customer Contracts</h1>
           <p className="text-xs text-slate-500 mt-1">Showing all customer contracts across Liberia</p>
         </div>
-        <button
-          onClick={fetchContracts}
-          disabled={loading}
-          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center gap-2 self-start md:self-auto transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh List</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={handleExportCSV}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export CSV</span>
+          </button>
+          <button
+            onClick={fetchContracts}
+            disabled={loading}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
-      {/* Search Bar */}
+      {/* Search & Installer Filter Bar */}
       <div className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-sm flex flex-col sm:flex-row items-center gap-3">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -164,6 +218,23 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
             placeholder="Search customer, phone, installer, or community..."
             className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
           />
+        </div>
+
+        {/* Installer Filter Dropdown */}
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+          <select
+            value={selectedInstaller}
+            onChange={(e) => setSelectedInstaller(e.target.value)}
+            className="w-full sm:w-56 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+          >
+            <option value="ALL">All Installers ({contracts.length})</option>
+            {uniqueInstallers.map((installer: any) => (
+              <option key={installer} value={installer}>
+                {installer}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -176,7 +247,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
           </div>
         ) : filteredContracts.length === 0 ? (
           <div className="p-12 text-center text-slate-500 text-xs font-medium">
-            No contracts found matching your search.
+            No contracts found matching your search or filter.
           </div>
         ) : (
           <div className="overflow-x-auto">

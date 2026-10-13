@@ -1,17 +1,29 @@
 import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../Lib/supabase';
-import { UserPlus, Key, Phone, User, AtSign, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, Send, Users } from 'lucide-react';
+import { UserPlus, Key, Phone, User, Mail, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, Users, Copy, Lock } from 'lucide-react';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+    storageKey: 'orange-temp-auth-instance',
+  },
+});
 
 export default function UserManagementView() {
   const [fullName, setFullName] = useState('');
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<'OE Installer' | 'Admin'>('OE Installer');
   const [defaultPassword, setDefaultPassword] = useState('Orange@1234');
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Registered Users list
   const [usersList, setUsersList] = useState<any[]>([]);
   const [fetchingUsers, setFetchingUsers] = useState(false);
 
@@ -19,7 +31,6 @@ export default function UserManagementView() {
     fetchUsersList();
   }, []);
 
-  // Fetch unique users from public.profiles table
   const fetchUsersList = async () => {
     setFetchingUsers(true);
     const { data, error } = await supabase
@@ -28,7 +39,6 @@ export default function UserManagementView() {
       .order('created_at', { ascending: false });
 
     if (!error && data) {
-      // De-duplicate users by unique ID or unique Email
       const uniqueUsers = Array.from(
         new Map(data.map((item) => [item.id || item.email, item])).values()
       );
@@ -37,34 +47,23 @@ export default function UserManagementView() {
     setFetchingUsers(false);
   };
 
-  const formatPhoneNumber = (inputPhone: string) => {
-    let cleaned = inputPhone.replace(/[^0-9]/g, '');
-    if (cleaned.startsWith('0')) {
-      cleaned = '231' + cleaned.slice(1);
-    } else if (cleaned.length === 8 || cleaned.length === 9) {
-      cleaned = '231' + cleaned;
-    }
-    return cleaned;
-  };
-
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setStatusMessage(null);
 
-    const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '');
-    const generatedEmail = `${cleanUsername}@orange.lr`;
-    const formattedPhone = formatPhoneNumber(phone);
+    const cleanEmail = email.trim().toLowerCase();
+    const usernamePrefix = cleanEmail.split('@')[0];
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: generatedEmail,
+      const { data, error } = await tempClient.auth.signUp({
+        email: cleanEmail,
         password: defaultPassword,
         options: {
           data: {
             full_name: fullName,
-            username: cleanUsername,
-            phone_number: formattedPhone,
+            username: usernamePrefix,
+            phone_number: phone,
             role: role,
             must_change_password: true,
           },
@@ -78,25 +77,23 @@ export default function UserManagementView() {
       }
 
       if (data.user) {
-        // Upsert into profiles table with explicit username field
         await supabase.from('profiles').upsert({
           id: data.user.id,
-          email: generatedEmail,
+          email: cleanEmail,
           full_name: fullName,
-          username: cleanUsername,
-          phone_number: formattedPhone,
+          username: usernamePrefix,
+          phone_number: phone,
           role: role,
+          must_change_password: true,
         });
-
-        sendWhatsAppCredentials(fullName, cleanUsername, role, defaultPassword, formattedPhone);
 
         setStatusMessage({
           type: 'success',
-          text: `Account created for ${fullName} (${role})! Launching WhatsApp...`,
+          text: `Account created for ${cleanEmail}! Temporary Password: ${defaultPassword}.`,
         });
 
         setFullName('');
-        setUsername('');
+        setEmail('');
         setPhone('');
         setRole('OE Installer');
         setDefaultPassword('Orange@1234');
@@ -109,44 +106,32 @@ export default function UserManagementView() {
     }
   };
 
-  const sendWhatsAppCredentials = (
-    name: string,
-    uname: string,
-    userRole: string,
-    pass: string,
-    phoneNum: string
-  ) => {
-    const rawMessage =
-      `*Orange Energy Portal Credentials*\n\n` +
-      `Hello ${name},\n` +
-      `Your account credentials have been updated.\n\n` +
-      `*Full Name:* ${name}\n` +
-      `*Username:* ${uname}\n` +
-      `*Role:* ${userRole}\n` +
-      `*Temporary Password:* ${pass}\n\n` +
-      `Please log in to the portal and update your password immediately.`;
+  const handleForcePasswordReset = async (usr: any) => {
+    if (!window.confirm(`Force password change for ${usr.full_name} (${usr.email}) on next login?`)) return;
 
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=${phoneNum}&text=${encodeURIComponent(rawMessage)}`;
-    window.open(whatsappUrl, '_blank');
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ must_change_password: true })
+        .eq('id', usr.id);
+
+      if (error) throw error;
+
+      setStatusMessage({
+        type: 'success',
+        text: `Successfully enabled force password change flag for ${usr.email}.`,
+      });
+      fetchUsersList();
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: `Failed to update: ${err.message}` });
+    }
   };
 
-  const handleResendPassword = async (targetUser: any) => {
-    const newTempPassword = `Orange@${Math.floor(1000 + Math.random() * 9000)}`;
-    const formattedPhone = formatPhoneNumber(targetUser.phone_number || targetUser.phone || '');
-    const activeUsername = targetUser.username || targetUser.email?.split('@')[0] || 'user';
-
-    setStatusMessage({
-      type: 'success',
-      text: `New password (${newTempPassword}) generated for ${targetUser.full_name}. Launching WhatsApp...`,
-    });
-
-    sendWhatsAppCredentials(
-      targetUser.full_name || 'User',
-      activeUsername,
-      targetUser.role || 'OE Installer',
-      newTempPassword,
-      formattedPhone
-    );
+  const copyCredentials = (usr: any) => {
+    const userEmail = usr.email;
+    const text = `Orange Energy Portal Credentials:\nEmail: ${userEmail}\nTemporary Password: Orange@1234\nPlease log in and update your password.`;
+    navigator.clipboard.writeText(text);
+    alert(`Credentials copied for ${usr.full_name} (${userEmail})!`);
   };
 
   return (
@@ -159,7 +144,7 @@ export default function UserManagementView() {
           </div>
           <div>
             <h3 className="font-extrabold text-slate-900 text-lg">Create User Account</h3>
-            <p className="text-xs text-slate-500">Dispatch login credentials straight to user's WhatsApp.</p>
+            <p className="text-xs text-slate-500">Register user with their email address and assign temporary credentials.</p>
           </div>
         </div>
 
@@ -176,16 +161,14 @@ export default function UserManagementView() {
             ) : (
               <AlertCircle size={18} className="text-rose-600 shrink-0" />
             )}
-            <span>{statusMessage.text}</span>
+            <span className="font-mono">{statusMessage.text}</span>
           </div>
         )}
 
         <form onSubmit={handleCreateUser} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Full Name
-              </label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Full Name</label>
               <div className="relative">
                 <User size={18} className="absolute left-3.5 top-3 text-slate-400" />
                 <input
@@ -194,24 +177,22 @@ export default function UserManagementView() {
                   onChange={(e) => setFullName(e.target.value)}
                   required
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                  placeholder="e.g. Mary Johnson"
+                  placeholder="e.g. Gerald Scotland"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Username
-              </label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Email Address</label>
               <div className="relative">
-                <AtSign size={18} className="absolute left-3.5 top-3 text-slate-400" />
+                <Mail size={18} className="absolute left-3.5 top-3 text-slate-400" />
                 <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                  placeholder="e.g. mary"
+                  placeholder="e.g. geraldscotland7@gmail.com"
                 />
               </div>
             </div>
@@ -219,9 +200,7 @@ export default function UserManagementView() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                User Role
-              </label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">User Role</label>
               <div className="relative">
                 <ShieldCheck size={18} className="absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
                 <select
@@ -237,9 +216,7 @@ export default function UserManagementView() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                WhatsApp Phone
-              </label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Phone Number</label>
               <div className="relative">
                 <Phone size={18} className="absolute left-3.5 top-3 text-slate-400" />
                 <input
@@ -254,9 +231,7 @@ export default function UserManagementView() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Temporary Password
-              </label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Temporary Password</label>
               <div className="relative">
                 <Key size={18} className="absolute left-3.5 top-3 text-slate-400" />
                 <input
@@ -273,14 +248,14 @@ export default function UserManagementView() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-sm shadow-md shadow-orange-500/20 transition disabled:opacity-50"
+            className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-50"
           >
-            {loading ? 'Creating Account...' : 'Create Account & Launch WhatsApp'}
+            {loading ? 'Creating Account...' : 'Create User Account'}
           </button>
         </form>
       </div>
 
-      {/* Directory & Password Recovery Panel */}
+      {/* User Directory */}
       <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
         <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -288,15 +263,11 @@ export default function UserManagementView() {
               <Users size={20} />
             </div>
             <div>
-              <h3 className="font-extrabold text-slate-900 text-base">User Directory & Password Recovery</h3>
-              <p className="text-xs text-slate-500">Resend credentials via WhatsApp if a user forgets their password.</p>
+              <h3 className="font-extrabold text-slate-900 text-base">User Directory & Credentials</h3>
+              <p className="text-xs text-slate-500">Manage user accounts and password reset flags.</p>
             </div>
           </div>
-          <button
-            onClick={fetchUsersList}
-            className={`p-2 text-slate-400 hover:text-orange-500 transition ${fetchingUsers ? 'animate-spin' : ''}`}
-            title="Refresh Directory"
-          >
+          <button onClick={fetchUsersList} className={`p-2 text-slate-400 hover:text-orange-500 transition ${fetchingUsers ? 'animate-spin' : ''}`}>
             <RefreshCw size={18} />
           </button>
         </div>
@@ -305,35 +276,44 @@ export default function UserManagementView() {
           <p className="text-xs text-slate-400 italic text-center py-4">No registered users found.</p>
         ) : (
           <div className="divide-y divide-slate-100">
-            {usersList.map((usr) => {
-              // Extract username safely from username field OR email prefix
-              const displayUsername = usr.username || (usr.email ? usr.email.split('@')[0] : 'user');
-
-              return (
-                <div key={usr.id || usr.email} className="py-3.5 flex items-center justify-between">
-                  <div>
-                    <div className="font-extrabold text-sm text-slate-900">{usr.full_name || 'Unnamed User'}</div>
-                    <div className="text-xs text-slate-500 flex items-center gap-1.5 font-medium mt-0.5">
-                      <span className="font-bold text-slate-700">@{displayUsername}</span>
-                      <span>•</span>
-                      <span className="font-extrabold text-orange-600 uppercase text-[10px] bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
-                        {usr.role || 'OE Installer'}
+            {usersList.map((usr) => (
+              <div key={usr.id || usr.email} className="py-3.5 flex items-center justify-between gap-4">
+                <div>
+                  <div className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                    <span>{usr.full_name || 'Unnamed User'}</span>
+                    {usr.must_change_password && (
+                      <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold uppercase">
+                        Must Change PW
                       </span>
-                      <span>•</span>
-                      <span>{usr.phone_number || usr.phone || 'No Phone'}</span>
-                    </div>
+                    )}
                   </div>
+                  <div className="text-xs text-slate-500 flex items-center gap-1.5 font-medium mt-0.5">
+                    <span className="font-bold text-orange-600">{usr.email}</span>
+                    <span>•</span>
+                    <span className="uppercase text-[10px] bg-slate-100 px-2 py-0.5 rounded font-bold">{usr.role}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleForcePasswordReset(usr)}
+                    className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition border border-amber-200"
+                    title="Require password change on next login"
+                  >
+                    <Lock size={14} />
+                    <span>Require PW Change</span>
+                  </button>
 
                   <button
-                    onClick={() => handleResendPassword(usr)}
-                    className="px-3.5 py-2 bg-slate-50 hover:bg-orange-500 hover:text-white text-slate-700 font-bold text-xs rounded-xl flex items-center gap-2 transition border border-slate-200 shadow-sm"
+                    onClick={() => copyCredentials(usr)}
+                    className="px-3 py-2 bg-slate-50 hover:bg-orange-500 hover:text-white text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition border border-slate-200"
                   >
-                    <Send size={14} />
-                    <span>Resend Password (WhatsApp)</span>
+                    <Copy size={14} />
+                    <span>Copy</span>
                   </button>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </div>

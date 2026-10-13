@@ -13,6 +13,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [forcePasswordChange, setForcePasswordChange] = useState<boolean>(false);
 
   useEffect(() => {
     // Get initial session
@@ -30,6 +31,7 @@ export default function App() {
         fetchUserProfile(session.user);
       } else {
         setCurrentUser(null);
+        setForcePasswordChange(false);
         setLoading(false);
       }
     });
@@ -47,6 +49,18 @@ export default function App() {
 
       if (error && error.code !== 'PGRST116') throw error;
 
+      // Check if password change is forced
+      const mustChange =
+        data?.must_change_password || authUser.user_metadata?.must_change_password;
+
+      if (mustChange) {
+        setForcePasswordChange(true);
+        setCurrentUser(null);
+        setLoading(false);
+        return;
+      }
+
+      setForcePasswordChange(false);
       setCurrentUser({
         id: authUser.id,
         email: authUser.email,
@@ -71,6 +85,14 @@ export default function App() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setCurrentUser(null);
+    setForcePasswordChange(false);
+  };
+
+  const handleLoginSuccess = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      await fetchUserProfile(session.user);
+    }
   };
 
   if (loading) {
@@ -81,13 +103,18 @@ export default function App() {
     );
   }
 
-  if (!currentUser) {
-    return <Login onLoginSuccess={() => window.location.reload()} />;
+  // If forcePasswordChange is true OR no user is logged in, stay on Login component
+  if (forcePasswordChange || !currentUser) {
+    return (
+      <Login
+        onLoginSuccess={handleLoginSuccess}
+        initialForcePasswordChange={forcePasswordChange}
+      />
+    );
   }
 
   return (
     <div className="min-h-screen max-w-full bg-slate-100 flex flex-col md:flex-row overflow-x-hidden font-sans">
-      {/* Sidebar - Handles both mobile top drawer and desktop sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -98,19 +125,16 @@ export default function App() {
         onSignOut={handleLogout}
       />
 
-      {/* Main Content Area - Adds pt-16 on mobile so content doesn't hide behind mobile top nav bar */}
       <main className="flex-1 w-full max-w-full p-4 sm:p-6 md:p-8 pt-18 md:pt-8 overflow-x-hidden min-w-0">
         {activeTab === 'dashboard' && <Dashboard currentUser={currentUser} />}
         {activeTab === 'new-contract' && <NewContract currentUser={currentUser} />}
         {activeTab === 'drafts' && <Drafts currentUser={currentUser} />}
         {activeTab === 'submissions' && <Submissions currentUser={currentUser} />}
-        
-        {/* Handles both 'contracts-view' and 'contracts' keys */}
+
         {(activeTab === 'contracts-view' || activeTab === 'contracts') && (
           <ContractsView currentUser={currentUser} />
         )}
-        
-        {/* Handles both 'user-management' and 'users' keys */}
+
         {(activeTab === 'user-management' || activeTab === 'users') &&
           currentUser?.role?.toUpperCase() === 'ADMIN' && (
             <UserManagementView />

@@ -29,9 +29,10 @@ export const ForcePasswordChangeModal: React.FC<Props> = ({ userId, onPasswordCh
     setError('');
 
     try {
-      // 1. Update user password in Supabase Auth
+      // 1. Update user password AND clear must_change_password in Auth user_metadata
       const { error: updateAuthError } = await supabase.auth.updateUser({
         password: newPassword,
+        data: { must_change_password: false },
       });
 
       if (updateAuthError) throw updateAuthError;

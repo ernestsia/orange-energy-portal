@@ -1,201 +1,216 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../Lib/supabase';
-import { User, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, RefreshCw, AlertCircle, KeyRound, CheckCircle2 } from 'lucide-react';
+import oeLogo from '../assets/oe.png';
 
 interface LoginProps {
-  onLoginSuccess?: () => void;
+  onLoginSuccess: () => void;
+  initialForcePasswordChange?: boolean;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
-  const [identifier, setIdentifier] = useState(''); // Accepts username or email
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess, initialForcePasswordChange = false }) => {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(initialForcePasswordChange);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  useEffect(() => {
+    setRequiresPasswordChange(initialForcePasswordChange);
+  }, [initialForcePasswordChange]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setErrorMsg('');
+    setError(null);
 
     try {
-      let loginEmail = identifier.trim();
-
-      // If input does not contain '@', treat it as a username and resolve the email
-      if (!loginEmail.includes('@')) {
-        const { data: resolvedEmail, error: rpcError } = await supabase
-          .rpc('get_email_by_identifier', { identifier: loginEmail });
-
-        if (rpcError || !resolvedEmail) {
-          throw new Error('Username not found. Please check your username.');
-        }
-
-        loginEmail = resolvedEmail;
-      }
-
-      // Authenticate with Supabase using resolved email
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password: password,
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      if (error) throw error;
+      if (authError) throw authError;
 
-      console.log('Login successful:', data.user);
+      const user = data.user;
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('must_change_password')
+          .eq('id', user.id)
+          .single();
 
-      if (onLoginSuccess) {
-        onLoginSuccess();
+        const mustChangeMetadata = user.user_metadata?.must_change_password;
+
+        if (profile?.must_change_password || mustChangeMetadata) {
+          setRequiresPasswordChange(true);
+          setLoading(false);
+          return;
+        }
       }
 
+      onLoginSuccess();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to sign in');
+      setError(err.message || 'Invalid email or password.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // 1. Update user password and metadata in Auth
+      const { error: updateAuthError } = await supabase.auth.updateUser({
+        password: newPassword,
+        data: { must_change_password: false },
+      });
+      if (updateAuthError) throw updateAuthError;
+
+      // 2. Clear must_change_password in public.profiles table
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('profiles')
+          .update({ must_change_password: false })
+          .eq('id', user.id);
+      }
+
+      setRequiresPasswordChange(false);
+      onLoginSuccess();
+    } catch (err: any) {
+      setError(err.message || 'Failed to update password.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-[#0B0F19] font-sans overflow-hidden">
-      {/* Left Section: Centered Branding & Title */}
-      <div className="hidden lg:flex flex-col justify-between w-1/2 bg-[#0B0F19] p-12 text-white relative z-10 border-r border-slate-800/60">
-        {/* Subtle Gradient Glow */}
-        <div className="absolute top-0 left-0 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
-
-        {/* Brand Header (Top Left) */}
-        <div className="flex items-center gap-3">
-          {/* OE Logo Image / Icon */}
-          <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center font-extrabold text-white text-2xl shadow-lg shadow-orange-500/30 overflow-hidden">
-            <img 
-              src="/oe.png" 
-              alt="Orange Energy Logo" 
-              className="w-full h-full object-contain p-1" 
-              onError={(e) => {
-                // Fallback to text logo if image fails to load
-                e.currentTarget.style.display = 'none';
-              }} 
-            />
-            <span className="font-black text-white text-xl">OE</span>
+    <div className="min-h-screen bg-[#0B1120] flex items-center justify-center p-4 font-sans">
+      <div className="max-w-md w-full bg-[#131C2E] border border-slate-800 rounded-2xl p-8 shadow-2xl space-y-6">
+        
+        <div className="text-center space-y-3">
+          <div className="inline-flex p-3 bg-white rounded-xl shadow-sm border border-slate-200">
+            <img src={oeLogo} alt="Orange Energies" className="h-10 w-auto object-contain" />
           </div>
-          <div>
-            <h2 className="text-lg font-black uppercase tracking-tight text-white leading-none">Orange Energy</h2>
-            <p className="text-[10px] text-orange-400 font-bold uppercase tracking-wider mt-1">Liberia Digital Portal</p>
-          </div>
+          <h1 className="text-xl font-black text-white tracking-tight uppercase">Orange Energy Portal</h1>
+          <p className="text-xs text-slate-400">
+            {requiresPasswordChange ? 'Security Update Required' : 'Sign in using your assigned email address'}
+          </p>
         </div>
 
-        {/* Centralized Heading Wording */}
-        <div className="my-auto text-center px-6">
-          <h1 className="text-5xl font-black text-white tracking-tight leading-tight max-w-xl mx-auto">
-            Orange Energy Subscriber Contract
-          </h1>
-        </div>
-
-        {/* Footer Text */}
-        <div className="text-[11px] text-slate-500 font-bold tracking-widest uppercase text-center lg:text-left">
-          Authorized Field & Admin Operations
-        </div>
-      </div>
-
-      {/* Right Section: Installer & Customer Background Image */}
-      <div 
-        className="flex-1 flex items-center justify-center p-6 sm:p-12 relative bg-cover bg-center bg-no-repeat bg-slate-900"
-        style={{
-          backgroundImage: `linear-gradient(to right, rgba(11, 15, 25, 0.95) 0%, rgba(11, 15, 25, 0.4) 40%, rgba(11, 15, 25, 0.6) 100%), url('/installer-signing.jpg'), url('/installer-signing.jfif')`
-        }}
-      >
-        <div className="w-full max-w-md space-y-6 relative z-10">
-          {/* Mobile Header Logo */}
-          <div className="lg:hidden flex items-center justify-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center font-extrabold text-white text-xl shadow-md overflow-hidden">
-              <img 
-                src="/oe.png" 
-                alt="Orange Energy Logo" 
-                className="w-full h-full object-contain p-1" 
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }} 
-              />
-              <span className="font-black text-white text-lg">OE</span>
-            </div>
-            <div className="text-left">
-              <h2 className="text-lg font-black uppercase text-white tracking-tight">Orange Energy</h2>
-              <p className="text-[10px] text-orange-400 font-bold uppercase tracking-wider">Subscriber Contract</p>
-            </div>
+        {error && (
+          <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
           </div>
+        )}
 
-          {/* Form Card */}
-          <div className="bg-[#111625]/90 backdrop-blur-xl border border-slate-800/80 p-8 rounded-2xl shadow-2xl space-y-6">
+        {!requiresPasswordChange ? (
+          <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <h3 className="text-2xl font-black text-white tracking-tight">Sign In</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Enter your credentials to access your field portal.
-              </p>
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">Email Address</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="geraldscotland7@gmail.com"
+                  className="w-full pl-10 pr-4 py-2.5 bg-[#0B1120] border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500"
+                />
+              </div>
             </div>
 
-            {errorMsg && (
-              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium flex items-center gap-2.5">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-                <span>{errorMsg}</span>
+            <div>
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">Password</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full pl-10 pr-4 py-2.5 bg-[#0B1120] border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500"
+                />
               </div>
-            )}
+            </div>
 
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Username or Email
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="e.g. ernest"
-                    required
-                    className="w-full pl-10 pr-4 py-2.5 bg-[#0B0F19]/90 border border-slate-800 rounded-xl text-xs font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 transition-all"
-                  />
-                </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
+            >
+              {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+              <span>{loading ? 'Signing in...' : 'Sign In'}</span>
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handlePasswordChangeSubmit} className="space-y-4">
+            <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-xl text-orange-300 text-xs">
+              For security reasons, you must change your temporary password before proceeding to the dashboard.
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">New Password</label>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 6 characters"
+                  className="w-full pl-10 pr-4 py-2.5 bg-[#0B1120] border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500"
+                />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className="w-full pl-10 pr-4 py-2.5 bg-[#0B0F19]/90 border border-slate-800 rounded-xl text-xs font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 transition-all"
-                  />
-                </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">Confirm New Password</label>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter new password"
+                  className="w-full pl-10 pr-4 py-2.5 bg-[#0B1120] border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500"
+                />
               </div>
+            </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Signing in...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Sign In</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
+            >
+              {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              <span>{loading ? 'Updating Password...' : 'Update Password & Continue'}</span>
+            </button>
+          </form>
+        )}
 
-          <div className="text-center text-[11px] text-slate-500 font-medium">
-            Orange Energy Liberia • Field Operations Portal
-          </div>
-        </div>
       </div>
     </div>
   );
