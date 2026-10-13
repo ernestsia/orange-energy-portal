@@ -12,6 +12,7 @@ interface SidebarProps {
   onSelectTab?: (tab: string) => void;
   currentUser?: any;
   onSignOut?: () => void;
+  onLogout?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -22,13 +23,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectTab,
   currentUser,
   onSignOut,
+  onLogout,
 }) => {
   // Support both currentTab and activeTab prop names
   const selectedTab = currentTab || activeTab || 'dashboard';
 
   const isAdmin = currentUser?.role?.toUpperCase() === 'ADMIN';
 
-  // Flexible handler that checks all possible function prop names
+  // Flexible handler that checks all possible tab function prop names
   const handleTabClick = (tab: string) => {
     if (typeof setCurrentTab === 'function') {
       setCurrentTab(tab);
@@ -38,6 +40,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       onSelectTab(tab);
     } else {
       console.warn('No tab switcher function prop was provided to Sidebar component.');
+    }
+  };
+
+  // Flexible sign out handler that supports onLogout or onSignOut
+  const handleSignOut = () => {
+    if (typeof onLogout === 'function') {
+      onLogout();
+    } else if (typeof onSignOut === 'function') {
+      onSignOut();
     }
   };
 
@@ -160,7 +171,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Sign Out Button */}
       <button
-        onClick={() => onSignOut && onSignOut()}
+        onClick={handleSignOut}
         className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors mt-6"
       >
         <LogOut className="w-4 h-4" />
