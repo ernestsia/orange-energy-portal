@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
-  LayoutDashboard, FilePlus, FileText, Send, ScrollText, Users, LogOut 
+  LayoutDashboard, FilePlus, FileText, Send, ScrollText, Users, LogOut, Menu, X 
 } from 'lucide-react';
 import oeLogo from '../assets/oe.png';
 
@@ -25,12 +25,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSignOut,
   onLogout,
 }) => {
-  // Support both currentTab and activeTab prop names
-  const selectedTab = currentTab || activeTab || 'dashboard';
+  const [isOpen, setIsOpen] = useState(false);
 
+  const selectedTab = currentTab || activeTab || 'dashboard';
   const isAdmin = currentUser?.role?.toUpperCase() === 'ADMIN';
 
-  // Flexible handler that checks all possible tab function prop names
   const handleTabClick = (tab: string) => {
     if (typeof setCurrentTab === 'function') {
       setCurrentTab(tab);
@@ -41,10 +40,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     } else {
       console.warn('No tab switcher function prop was provided to Sidebar component.');
     }
+    // Close mobile menu when a tab is selected
+    setIsOpen(false);
   };
 
-  // Flexible sign out handler that supports onLogout or onSignOut
   const handleSignOut = () => {
+    setIsOpen(false);
     if (typeof onLogout === 'function') {
       onLogout();
     } else if (typeof onSignOut === 'function') {
@@ -63,11 +64,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ? currentUser.username[0].toUpperCase()
     : 'OE';
 
-  return (
+  const sidebarContent = (
     <div className="w-64 bg-[#0B1120] min-h-screen p-4 flex flex-col justify-between text-white font-sans shrink-0 border-r border-slate-800">
       <div className="space-y-6">
         
-        {/* Sidebar Logo Header - Orange Energies Logo */}
+        {/* Mobile Header Close Button */}
+        <div className="flex items-center justify-between md:hidden">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Navigation</span>
+          <button 
+            onClick={() => setIsOpen(false)}
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg bg-slate-800"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Sidebar Logo Header */}
         <div className="flex items-center justify-center p-3 rounded-xl bg-white shadow-sm border border-slate-200">
           <img 
             src={oeLogo} 
@@ -178,6 +190,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <span>Sign Out</span>
       </button>
     </div>
+  );
+
+  return (
+    <>
+      {/* Mobile Top Navigation Bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-[#0B1120] border-b border-slate-800 z-30 px-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsOpen(true)}
+            className="p-2 text-slate-300 hover:text-white rounded-lg bg-slate-800"
+            aria-label="Open Navigation Menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <img src={oeLogo} alt="Orange Energies" className="h-7 w-auto object-contain bg-white px-2 py-0.5 rounded" />
+        </div>
+        <span className="text-xs font-extrabold text-orange-500 uppercase tracking-wider">
+          {currentUser?.role || 'OE Portal'}
+        </span>
+      </div>
+
+      {/* Mobile Drawer Backdrop Overlay */}
+      {isOpen && (
+        <div 
+          onClick={() => setIsOpen(false)} 
+          className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-40 md:hidden"
+        />
+      )}
+
+      {/* Mobile Off-canvas Drawer */}
+      <div className={`fixed top-0 left-0 bottom-0 z-50 transform transition-transform duration-300 ease-in-out md:hidden ${
+        isOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
+        {sidebarContent}
+      </div>
+
+      {/* Desktop Standard Sidebar */}
+      <div className="hidden md:block">
+        {sidebarContent}
+      </div>
+    </>
   );
 };
 

@@ -86,8 +86,8 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen max-w-full bg-slate-100 flex flex-col lg:flex-row overflow-x-hidden font-sans">
-      {/* Sidebar - supporting all prop variations */}
+    <div className="min-h-screen max-w-full bg-slate-100 flex flex-col md:flex-row overflow-x-hidden font-sans">
+      {/* Sidebar - Handles both mobile top drawer and desktop sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -98,8 +98,8 @@ export default function App() {
         onSignOut={handleLogout}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-full p-4 sm:p-6 lg:p-8 overflow-x-hidden">
+      {/* Main Content Area - Adds pt-16 on mobile so content doesn't hide behind mobile top nav bar */}
+      <main className="flex-1 w-full max-w-full p-4 sm:p-6 md:p-8 pt-18 md:pt-8 overflow-x-hidden min-w-0">
         {activeTab === 'dashboard' && <Dashboard currentUser={currentUser} />}
         {activeTab === 'new-contract' && <NewContract currentUser={currentUser} />}
         {activeTab === 'drafts' && <Drafts currentUser={currentUser} />}
