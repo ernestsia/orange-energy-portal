@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Save, CheckCircle2, AlertCircle, RefreshCw, FileDown, Camera, MapPin, Eraser, Image as ImageIcon } from 'lucide-react';
+import { Send, Save, CheckCircle2, AlertCircle, RefreshCw, FileDown, Camera, MapPin, Eraser } from 'lucide-react';
 import { Geolocation } from '@capacitor/geolocation';
 import { supabase } from '../Lib/supabase';
 
@@ -101,34 +101,47 @@ export const NewContract: React.FC<{ currentUser?: any }> = ({ currentUser }) =>
     }));
   };
 
-  // Capacitor Native GPS Auto-Detect Feature
+  // Robust GPS Auto-Detect with Web Fallback & Capacitor Support
   const handleGetGps = async () => {
     setGettingGps(true);
     setMessage(null);
 
     try {
-      // 1. Request Android OS permission explicitly
-      const permission = await Geolocation.requestPermissions();
-      if (permission.location === 'denied') {
-        setMessage({
-          type: 'error',
-          text: 'Location permission was denied. Please allow location permissions in device settings.',
+      let lat = 0;
+      let lng = 0;
+
+      const isCapacitorNative = typeof (window as any).Capacitor !== 'undefined' && (window as any).Capacitor.isNativePlatform();
+
+      if (isCapacitorNative) {
+        const permission = await Geolocation.requestPermissions();
+        if (permission.location === 'denied') {
+          throw new Error('Location permission was denied in device settings.');
+        }
+        const position = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: true,
+          timeout: 10000,
         });
-        setGettingGps(false);
-        return;
+        lat = position.coords.latitude;
+        lng = position.coords.longitude;
+      } else if (navigator.geolocation) {
+        const position: GeolocationPosition = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0,
+          });
+        });
+        lat = position.coords.latitude;
+        lng = position.coords.longitude;
+      } else {
+        throw new Error('Geolocation is not supported by your browser or device.');
       }
 
-      // 2. Fetch position using device GPS module
-      const position = await Geolocation.getCurrentPosition({
-        enableHighAccuracy: true,
-        timeout: 10000,
-      });
-
-      const coords = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+      const coords = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
       setFormData((prev) => ({ ...prev, gpsCoordinates: coords }));
       setMessage({ type: 'success', text: 'GPS coordinates retrieved successfully!' });
     } catch (err: any) {
-      console.error('Capacitor Geolocation Error:', err);
+      console.error('Geolocation Error:', err);
       setMessage({
         type: 'error',
         text: `Failed to retrieve GPS location: ${err.message || 'GPS service unavailable'}`,
@@ -438,6 +451,33 @@ export const NewContract: React.FC<{ currentUser?: any }> = ({ currentUser }) =>
                   <span>{gettingGps ? 'Locating...' : 'Get Location'}</span>
                 </button>
               </div>
+
+              {/* Live OpenStreetMap Preview */}
+              {formData.gpsCoordinates && formData.gpsCoordinates.includes(',') && (
+                <div className="mt-3 rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+                  <iframe
+                    title="Location Preview Map"
+                    width="100%"
+                    height="180"
+                    frameBorder="0"
+                    scrolling="no"
+                    marginHeight={0}
+                    marginWidth={0}
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${
+                      parseFloat(formData.gpsCoordinates.split(',')[1] || '-10.8') - 0.01
+                    },${parseFloat(formData.gpsCoordinates.split(',')[0] || '6.3') - 0.01},${
+                      parseFloat(formData.gpsCoordinates.split(',')[1] || '-10.8') + 0.01
+                    },${
+                      parseFloat(formData.gpsCoordinates.split(',')[0] || '6.3') + 0.01
+                    }&layer=mapnik&marker=${formData.gpsCoordinates.replace(/\s+/g, '')}`}
+                    className="w-full"
+                  />
+                  <div className="bg-slate-50 px-3 py-1.5 text-[11px] text-slate-500 font-mono flex items-center justify-between border-t border-slate-200">
+                    <span>Pinned Coordinates: {formData.gpsCoordinates}</span>
+                    <span className="text-orange-600 font-bold">OpenStreetMap Live View</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -487,6 +527,7 @@ export const NewContract: React.FC<{ currentUser?: any }> = ({ currentUser }) =>
                 >
                   <option value="">Select ID Type</option>
                   <option value="national_id">National Identification (NIR)</option>
+                  <option value="nasscorp_id">NASSCORP ID</option>
                   <option value="passport">Passport</option>
                   <option value="voter_id">Voter Registration Card</option>
                   <option value="driver_license">Driver's License</option>
@@ -794,64 +835,60 @@ export const NewContract: React.FC<{ currentUser?: any }> = ({ currentUser }) =>
               </div>
             </div>
 
-            {/* Customer Thumbprint Photo */}
+            {/* Thumbprint Photo Upload */}
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                Customer Thumbprint Photo <span className="text-slate-400 font-normal">(Optional)</span>
+                Customer Thumbprint Photo (Optional)
               </label>
-              <input
-                type="file"
-                ref={thumbprintInputRef}
-                accept="image/*"
-                capture="environment"
-                onChange={handleThumbprintUpload}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => thumbprintInputRef.current?.click()}
-                className="w-full py-3 bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg flex items-center justify-center gap-2 transition-colors"
-              >
-                <Camera className="w-4 h-4 text-slate-500" />
-                <span>{thumbprintImage ? 'Change Thumbprint Photo' : 'Take / Upload Customer Thumbprint Photo'}</span>
-              </button>
-
-              {thumbprintImage && (
-                <div className="mt-3 flex items-center gap-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  <img src={thumbprintImage} alt="Thumbprint Preview" className="w-16 h-16 object-cover rounded-md border" />
-                  <span className="text-xs font-medium text-emerald-700 flex items-center gap-1">
-                    <CheckCircle2 className="w-4 h-4" /> Thumbprint captured
+              <div className="flex items-center gap-4">
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={thumbprintInputRef}
+                  onChange={handleThumbprintUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => thumbprintInputRef.current?.click()}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg flex items-center gap-2 border border-slate-300 transition-colors"
+                >
+                  <Camera className="w-4 h-4 text-orange-500" />
+                  <span>Upload / Capture Thumbprint</span>
+                </button>
+                {thumbprintImage && (
+                  <span className="text-xs text-emerald-600 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4" /> Thumbprint attached
                   </span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row gap-4 pt-4">
+        <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-4">
           <button
             type="button"
             onClick={handleSaveDraft}
-            className="flex-1 py-3.5 px-6 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-sm"
+            className="w-full sm:w-auto px-6 py-3 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs uppercase tracking-wider rounded-xl transition-colors flex items-center justify-center gap-2"
           >
             <Save className="w-4 h-4" />
             <span>Save Draft</span>
           </button>
+
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 py-3.5 px-6 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-orange-500/20 disabled:opacity-50"
+            className="w-full sm:w-auto px-8 py-3 bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            {loading ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-            <span>{loading ? 'Submitting Contract...' : 'Submit Subscriber Contract'}</span>
+            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            <span>{loading ? 'Submitting Contract...' : 'Submit Contract'}</span>
           </button>
         </div>
       </form>
     </div>
   );
 };
+
+export default NewContract;

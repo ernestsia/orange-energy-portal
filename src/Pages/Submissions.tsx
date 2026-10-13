@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Search, RefreshCw, CheckCircle2, Clock, XCircle, 
-  Eye, Filter, Check, X, MapPin, User, FileText, Building
+  Search, RefreshCw, 
+  Eye, MapPin, User, FileText
 } from 'lucide-react';
 import { supabase } from '../Lib/supabase';
 
@@ -27,16 +27,13 @@ export interface ContractRecord {
   agent_contact: string;
   customer_signature?: string;
   agent_signature?: string;
-  status: 'pending' | 'approved' | 'rejected' | string;
   created_at: string;
 }
 
 export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }) => {
   const [submissions, setSubmissions] = useState<ContractRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedContract, setSelectedContract] = useState<ContractRecord | null>(null);
 
   const isAdmin = currentUser?.role?.toUpperCase() === 'ADMIN';
@@ -76,35 +73,7 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
     fetchSubmissions();
   }, [currentUser]);
 
-  // Update Contract Status in Supabase (Restricted to Admin)
-  const handleUpdateStatus = async (id: string, newStatus: 'approved' | 'rejected') => {
-    if (!isAdmin) return;
-
-    setUpdatingId(id);
-    try {
-      const { error } = await supabase
-        .from('contracts')
-        .update({ status: newStatus })
-        .eq('id', id);
-
-      if (error) throw error;
-
-      // Update state locally
-      setSubmissions((prev) =>
-        prev.map((sub) => (sub.id === id ? { ...sub, status: newStatus } : sub))
-      );
-
-      if (selectedContract?.id === id) {
-        setSelectedContract((prev) => (prev ? { ...prev, status: newStatus } : null));
-      }
-    } catch (err) {
-      console.error(`Failed to update status to ${newStatus}:`, err);
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  // Filtered list based on search term and status
+  // Filtered list based on search term
   const filteredSubmissions = submissions.filter((sub) => {
     const matchesSearch =
       sub.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -112,37 +81,23 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
       sub.agent_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       sub.community?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesStatus =
-      statusFilter === 'all' || sub.status?.toLowerCase() === statusFilter.toLowerCase();
-
-    return matchesSearch && matchesStatus;
+    return matchesSearch;
   });
 
-  const getStatusBadge = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'approved':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Approved
-          </span>
-        );
-      case 'rejected':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold rounded-full">
-            <XCircle className="w-3.5 h-3.5" />
-            Rejected
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold rounded-full">
-            <Clock className="w-3.5 h-3.5" />
-            Pending Review
-          </span>
-        );
-    }
-  };
+  // Helper variables to safely grab customer and agent signatures from any potential DB column name
+  const custSig = selectedContract 
+    ? selectedContract.customer_signature || 
+      (selectedContract as any).signature_url || 
+      (selectedContract as any).customer_sig || 
+      (selectedContract as any).signature
+    : null;
+
+  const agentSig = selectedContract 
+    ? selectedContract.agent_signature || 
+      (selectedContract as any).installer_signature || 
+      (selectedContract as any).agent_sig ||
+      (selectedContract as any).installer_sig
+    : null;
 
   return (
     <div className="space-y-6 font-sans max-w-6xl mx-auto pb-12">
@@ -151,7 +106,7 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Contract Submissions</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Review and manage contracts submitted by field agents.
+            View and manage contracts submitted by field agents.
           </p>
         </div>
         <button
@@ -164,7 +119,7 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
         </button>
       </div>
 
-      {/* Search & Filters */}
+      {/* Search Bar */}
       <div className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-sm flex flex-col sm:flex-row items-center gap-3">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -175,20 +130,6 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
             placeholder="Search by customer, phone, agent, or community..."
             className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
           />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full sm:w-auto px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-          >
-            <option value="all">All Statuses</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-          </select>
         </div>
       </div>
 
@@ -201,7 +142,7 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
           </div>
         ) : filteredSubmissions.length === 0 ? (
           <div className="p-12 text-center text-slate-500 text-xs font-medium">
-            No contract records match your search or filter.
+            No contract records match your search.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -213,7 +154,6 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
                   <th className="px-6 py-3.5">Offer</th>
                   <th className="px-6 py-3.5">Agent</th>
                   <th className="px-6 py-3.5">Submitted On</th>
-                  <th className="px-6 py-3.5">Status</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
@@ -238,30 +178,8 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
                     <td className="px-6 py-4 text-slate-500 whitespace-nowrap">
                       {new Date(item.created_at).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(item.status)}</td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
-                        {/* Quick Approve/Reject ONLY for Admin users */}
-                        {isAdmin && item.status?.toLowerCase() === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => handleUpdateStatus(item.id, 'approved')}
-                              disabled={updatingId === item.id}
-                              className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition-colors border border-emerald-200"
-                              title="Approve Contract"
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleUpdateStatus(item.id, 'rejected')}
-                              disabled={updatingId === item.id}
-                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition-colors border border-rose-200"
-                              title="Reject Contract"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
                         <button
                           onClick={() => setSelectedContract(item)}
                           className="p-1.5 hover:bg-orange-50 text-orange-600 rounded-lg transition-colors"
@@ -279,7 +197,7 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
         )}
       </div>
 
-      {/* Detail & Review Modal */}
+      {/* Detail Modal */}
       {selectedContract && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-xl border border-slate-200">
@@ -292,7 +210,7 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
                 onClick={() => setSelectedContract(null)}
                 className="p-1 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
               >
-                <XCircle className="w-6 h-6" />
+                ✕
               </button>
             </div>
 
@@ -318,7 +236,7 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
                   <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
                     <span className="font-bold text-slate-400 uppercase text-[10px] block">ID Type & Number</span>
                     <p className="text-slate-900 font-medium mt-0.5">
-                      <span className="capitalize">{selectedContract.id_type?.replace(/_/g, ' ')}</span> - {selectedContract.id_number}
+                      <span className="capitalize">{selectedContract.id_type?.replace(/_/g, ' ')}</span>: {selectedContract.id_number}
                     </p>
                   </div>
                   <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
@@ -381,34 +299,42 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
               </div>
 
               {/* Signatures */}
-              {(selectedContract.customer_signature || selectedContract.agent_signature) && (
+              {(custSig || agentSig) && (
                 <div>
                   <h3 className="text-xs font-black uppercase tracking-wider text-orange-600 mb-2">
                     Digital Signatures
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {selectedContract.customer_signature && (
+                    {custSig ? (
                       <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-center">
                         <span className="font-bold text-slate-500 uppercase text-[10px] block mb-2">
                           Customer Signature
                         </span>
                         <img
-                          src={selectedContract.customer_signature}
+                          src={custSig}
                           alt="Customer Signature"
                           className="max-h-24 mx-auto object-contain bg-white rounded border border-slate-200 p-1"
                         />
                       </div>
+                    ) : (
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-center flex items-center justify-center text-slate-400 italic text-[11px]">
+                        No customer signature captured
+                      </div>
                     )}
-                    {selectedContract.agent_signature && (
+                    {agentSig ? (
                       <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-center">
                         <span className="font-bold text-slate-500 uppercase text-[10px] block mb-2">
                           Agent Signature
                         </span>
                         <img
-                          src={selectedContract.agent_signature}
+                          src={agentSig}
                           alt="Agent Signature"
                           className="max-h-24 mx-auto object-contain bg-white rounded border border-slate-200 p-1"
                         />
+                      </div>
+                    ) : (
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-center flex items-center justify-center text-slate-400 italic text-[11px]">
+                        No agent signature captured
                       </div>
                     )}
                   </div>
@@ -416,36 +342,14 @@ export const SubmissionsView: React.FC<{ currentUser?: any }> = ({ currentUser }
               )}
             </div>
 
-            {/* Modal Decision / Footer */}
-            <div className="mt-6 border-t border-slate-100 pt-4 flex items-center justify-between">
-              <div>{getStatusBadge(selectedContract.status)}</div>
-              
-              {/* Approval Buttons ONLY for ADMIN */}
-              {isAdmin ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleUpdateStatus(selectedContract.id, 'rejected')}
-                    disabled={updatingId === selectedContract.id}
-                    className="px-4 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold rounded-lg transition-colors"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    onClick={() => handleUpdateStatus(selectedContract.id, 'approved')}
-                    disabled={updatingId === selectedContract.id}
-                    className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold rounded-lg transition-colors shadow-sm"
-                  >
-                    Approve
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setSelectedContract(null)}
-                  className="px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 text-xs font-bold rounded-lg transition-colors"
-                >
-                  Close
-                </button>
-              )}
+            {/* Modal Footer */}
+            <div className="mt-6 border-t border-slate-100 pt-4 flex items-center justify-end">
+              <button
+                onClick={() => setSelectedContract(null)}
+                className="px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 text-xs font-bold rounded-lg transition-colors"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

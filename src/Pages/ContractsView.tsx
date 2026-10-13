@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Search, RefreshCw, CheckCircle2, Clock, XCircle, 
-  Eye, Filter, Wrench, X, Printer, ShieldCheck, FileText, User, Loader2
+  Search, RefreshCw, 
+  Eye, Wrench, X, Printer, ShieldCheck, FileText, User, MapPin 
 } from 'lucide-react';
 import { supabase } from '../Lib/supabase';
 
@@ -30,7 +30,6 @@ export interface ContractRecord {
   customer_signature?: string;
   agent_signature?: string;
   thumbprint_photo?: string;
-  status: 'pending' | 'approved' | 'rejected' | string;
   created_at: string;
 }
 
@@ -41,9 +40,7 @@ interface ContractsViewProps {
 export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => {
   const [contracts, setContracts] = useState<ContractRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [updatingStatus, setUpdatingStatus] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedContract, setSelectedContract] = useState<ContractRecord | null>(null);
 
   const fetchContracts = async () => {
@@ -66,7 +63,6 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
   useEffect(() => {
     fetchContracts();
 
-    // Subscribe to real-time contract table changes
     const channel = supabase
       .channel('public:contracts_view')
       .on(
@@ -92,32 +88,6 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
     };
   }, []);
 
-  const handleUpdateStatus = async (contractId: string, newStatus: 'approved' | 'rejected') => {
-    setUpdatingStatus(true);
-    try {
-      const { error } = await supabase
-        .from('contracts')
-        .update({ status: newStatus })
-        .eq('id', contractId);
-
-      if (error) throw error;
-
-      // Local optimistic state updates
-      setContracts((prev) =>
-        prev.map((c) => (c.id === contractId ? { ...c, status: newStatus } : c))
-      );
-
-      if (selectedContract && selectedContract.id === contractId) {
-        setSelectedContract({ ...selectedContract, status: newStatus });
-      }
-    } catch (err: any) {
-      console.error('Failed to update status:', err.message);
-      alert(`Status update failed: ${err.message}`);
-    } finally {
-      setUpdatingStatus(false);
-    }
-  };
-
   const filteredContracts = contracts.filter((item) => {
     const matchesSearch =
       item.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -126,37 +96,25 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
       item.assigned_installer?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.community?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesStatus =
-      statusFilter === 'all' || item.status?.toLowerCase() === statusFilter.toLowerCase();
-
-    return matchesSearch && matchesStatus;
+    return matchesSearch;
   });
 
-  const getStatusBadge = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'approved':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            APPROVED
-          </span>
-        );
-      case 'rejected':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold rounded-full">
-            <XCircle className="w-3.5 h-3.5" />
-            REJECTED
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold rounded-full">
-            <Clock className="w-3.5 h-3.5" />
-            PENDING
-          </span>
-        );
-    }
-  };
+  // Robust signature check looking through all possible column names
+  const custSig = selectedContract 
+    ? (selectedContract as any).customer_signature || 
+      (selectedContract as any).signature_url || 
+      (selectedContract as any).customer_sig || 
+      (selectedContract as any).signature ||
+      (selectedContract as any).customerSignature
+    : null;
+
+  const agentSig = selectedContract 
+    ? (selectedContract as any).agent_signature || 
+      (selectedContract as any).installer_signature || 
+      (selectedContract as any).agent_sig ||
+      (selectedContract as any).installer_sig ||
+      (selectedContract as any).agentSignature
+    : null;
 
   return (
     <div className="space-y-6 font-sans max-w-7xl mx-auto pb-12">
@@ -176,7 +134,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
         </button>
       </div>
 
-      {/* Filter & Search Bar */}
+      {/* Search Bar */}
       <div className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-sm flex flex-col sm:flex-row items-center gap-3">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -187,20 +145,6 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
             placeholder="Search customer, phone, installer, or community..."
             className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
           />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full sm:w-auto px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-          >
-            <option value="all">All Statuses</option>
-            <option value="approved">Approved</option>
-            <option value="pending">Pending</option>
-            <option value="rejected">Rejected</option>
-          </select>
         </div>
       </div>
 
@@ -223,7 +167,6 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
                   <th className="px-6 py-3.5">Customer Name</th>
                   <th className="px-6 py-3.5">Phone Number</th>
                   <th className="px-6 py-3.5">Assigned / OE Installer</th>
-                  <th className="px-6 py-3.5">Status</th>
                   <th className="px-6 py-3.5">Created Date</th>
                   <th className="px-6 py-3.5 text-right">Action</th>
                 </tr>
@@ -249,7 +192,6 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
                         <span className="text-[10px] text-slate-400 font-mono block">{item.installer_contact}</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(item.status)}</td>
                     <td className="px-6 py-4 text-slate-500 whitespace-nowrap">
                       {new Date(item.created_at || item.agreement_date).toLocaleDateString()}
                     </td>
@@ -304,12 +246,6 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
 
             {/* Contract Body Details */}
             <div className="space-y-6 text-xs">
-              {/* Status Banner */}
-              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200/80">
-                <span className="font-bold text-slate-700 uppercase tracking-wider">Contract Status</span>
-                {getStatusBadge(selectedContract.status)}
-              </div>
-
               {/* Customer Details */}
               <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/60 space-y-3">
                 <h3 className="font-bold text-slate-900 text-sm uppercase tracking-wide flex items-center gap-2 border-b border-slate-200 pb-2">
@@ -341,6 +277,35 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
                     <span className="font-mono text-slate-800">{selectedContract.gps_coordinates || 'Not captured'}</span>
                   </div>
                 </div>
+
+                {/* Live OpenStreetMap Preview inside Modal */}
+                {selectedContract.gps_coordinates && selectedContract.gps_coordinates.includes(',') && (
+                  <div className="mt-3 rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+                    <iframe
+                      title="Contract Location Map"
+                      width="100%"
+                      height="200"
+                      frameBorder="0"
+                      scrolling="no"
+                      marginHeight={0}
+                      marginWidth={0}
+                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${
+                        parseFloat(selectedContract.gps_coordinates.split(',')[1]) - 0.01
+                      },${parseFloat(selectedContract.gps_coordinates.split(',')[0]) - 0.01},${
+                        parseFloat(selectedContract.gps_coordinates.split(',')[1]) + 0.01
+                      },${
+                        parseFloat(selectedContract.gps_coordinates.split(',')[0]) + 0.01
+                      }&layer=mapnik&marker=${selectedContract.gps_coordinates.replace(/\s+/g, '')}`}
+                      className="w-full"
+                    />
+                    <div className="bg-white px-3 py-1.5 text-[11px] text-slate-500 font-mono flex items-center justify-between border-t border-slate-200">
+                      <span>Coordinates: {selectedContract.gps_coordinates}</span>
+                      <span className="text-orange-600 font-bold flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5" /> OpenStreetMap Location Pin
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Offer & Subscription Package */}
@@ -407,14 +372,16 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
                   <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-2">
                     Customer Signature
                   </span>
-                  {selectedContract.customer_signature ? (
-                    <img
-                      src={selectedContract.customer_signature}
-                      alt="Customer Signature"
-                      className="max-h-24 mx-auto object-contain border-b border-slate-100 pb-2"
-                    />
+                  {custSig ? (
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex items-center justify-center">
+                      <img
+                        src={custSig}
+                        alt="Customer Signature"
+                        className="max-h-24 max-w-full object-contain"
+                      />
+                    </div>
                   ) : (
-                    <div className="h-24 flex items-center justify-center text-slate-400 italic bg-slate-50 rounded-lg">
+                    <div className="h-24 flex items-center justify-center text-slate-400 italic bg-slate-50 rounded-lg border border-slate-200">
                       No customer signature captured
                     </div>
                   )}
@@ -426,14 +393,16 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
                   <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-2">
                     OE Installer / Agent Signature
                   </span>
-                  {selectedContract.agent_signature ? (
-                    <img
-                      src={selectedContract.agent_signature}
-                      alt="Agent Signature"
-                      className="max-h-24 mx-auto object-contain border-b border-slate-100 pb-2"
-                    />
+                  {agentSig ? (
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex items-center justify-center">
+                      <img
+                        src={agentSig}
+                        alt="Agent Signature"
+                        className="max-h-24 max-w-full object-contain"
+                      />
+                    </div>
                   ) : (
-                    <div className="h-24 flex items-center justify-center text-slate-400 italic bg-slate-50 rounded-lg">
+                    <div className="h-24 flex items-center justify-center text-slate-400 italic bg-slate-50 rounded-lg border border-slate-200">
                       No agent signature captured
                     </div>
                   )}
@@ -444,27 +413,8 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ currentUser }) => 
               </div>
             </div>
 
-            {/* Modal Footer with Status Actions */}
-            <div className="mt-8 border-t border-slate-100 pt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  onClick={() => handleUpdateStatus(selectedContract.id, 'approved')}
-                  disabled={updatingStatus || selectedContract.status?.toLowerCase() === 'approved'}
-                  className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
-                >
-                  {updatingStatus ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                  Approve Contract
-                </button>
-                <button
-                  onClick={() => handleUpdateStatus(selectedContract.id, 'rejected')}
-                  disabled={updatingStatus || selectedContract.status?.toLowerCase() === 'rejected'}
-                  className="flex-1 sm:flex-none px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
-                >
-                  {updatingStatus ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
-                  Reject Contract
-                </button>
-              </div>
-
+            {/* Modal Footer */}
+            <div className="mt-8 border-t border-slate-100 pt-4 flex items-center justify-end">
               <button
                 onClick={() => setSelectedContract(null)}
                 className="w-full sm:w-auto px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"

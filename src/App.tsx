@@ -7,7 +7,7 @@ import Login from './components/Login';
 import UserManagementView from './Pages/UserManagementView';
 import Drafts from './Pages/Drafts';
 import { NewContract } from './Pages/NewContract';
-import  Submissions  from './Pages/Submissions';
+import Submissions from './Pages/Submissions';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -87,24 +87,34 @@ export default function App() {
 
   return (
     <div className="min-h-screen max-w-full bg-slate-100 flex flex-col lg:flex-row overflow-x-hidden font-sans">
-      {/* Mobile Drawer & Desktop Sidebar */}
+      {/* Sidebar - supporting all prop variations */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        currentTab={activeTab}
+        setCurrentTab={setActiveTab}
         currentUser={currentUser}
         onLogout={handleLogout}
+        onSignOut={handleLogout}
       />
 
-      {/* Main Responsive Content Area */}
+      {/* Main Content Area */}
       <main className="flex-1 w-full max-w-full p-4 sm:p-6 lg:p-8 overflow-x-hidden">
         {activeTab === 'dashboard' && <Dashboard currentUser={currentUser} />}
         {activeTab === 'new-contract' && <NewContract currentUser={currentUser} />}
         {activeTab === 'drafts' && <Drafts currentUser={currentUser} />}
         {activeTab === 'submissions' && <Submissions currentUser={currentUser} />}
-        {activeTab === 'contracts' && <ContractsView currentUser={currentUser} />}
-        {activeTab === 'users' && currentUser?.role?.toUpperCase() === 'ADMIN' && (
-          <UserManagementView />
+        
+        {/* Handles both 'contracts-view' and 'contracts' keys */}
+        {(activeTab === 'contracts-view' || activeTab === 'contracts') && (
+          <ContractsView currentUser={currentUser} />
         )}
+        
+        {/* Handles both 'user-management' and 'users' keys */}
+        {(activeTab === 'user-management' || activeTab === 'users') &&
+          currentUser?.role?.toUpperCase() === 'ADMIN' && (
+            <UserManagementView />
+          )}
       </main>
     </div>
   );

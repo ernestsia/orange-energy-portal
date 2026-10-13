@@ -1,126 +1,173 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
-  LayoutDashboard, FilePlus, FileText, Send, ScrollText, 
-  Users, LogOut, Menu, X 
+  LayoutDashboard, FilePlus, FileText, Send, ScrollText, Users, LogOut 
 } from 'lucide-react';
+import oeLogo from '../assets/oe.png';
 
 interface SidebarProps {
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
-  currentUser: any;
-  onLogout: () => void;
+  currentTab?: string;
+  activeTab?: string;
+  setCurrentTab?: (tab: string) => void;
+  setActiveTab?: (tab: string) => void;
+  onSelectTab?: (tab: string) => void;
+  currentUser?: any;
+  onSignOut?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
-  activeTab, 
-  setActiveTab, 
-  currentUser, 
-  onLogout 
+export const Sidebar: React.FC<SidebarProps> = ({
+  currentTab,
+  activeTab,
+  setCurrentTab,
+  setActiveTab,
+  onSelectTab,
+  currentUser,
+  onSignOut,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  // Support both currentTab and activeTab prop names
+  const selectedTab = currentTab || activeTab || 'dashboard';
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'new-contract', label: 'New Contract', icon: FilePlus },
-    { id: 'drafts', label: 'Drafts', icon: FileText },
-    { id: 'submissions', label: 'Submissions', icon: Send },
-    { id: 'contracts', label: 'Contracts View', icon: ScrollText },
-    ...(currentUser?.role?.toUpperCase() === 'ADMIN' 
-      ? [{ id: 'users', label: 'User Management', icon: Users }] 
-      : []),
-  ];
+  const isAdmin = currentUser?.role?.toUpperCase() === 'ADMIN';
 
-  const handleSelect = (id: string) => {
-    setActiveTab(id);
-    setIsOpen(false); // Auto-close drawer on mobile selection
+  // Flexible handler that checks all possible function prop names
+  const handleTabClick = (tab: string) => {
+    if (typeof setCurrentTab === 'function') {
+      setCurrentTab(tab);
+    } else if (typeof setActiveTab === 'function') {
+      setActiveTab(tab);
+    } else if (typeof onSelectTab === 'function') {
+      onSelectTab(tab);
+    } else {
+      console.warn('No tab switcher function prop was provided to Sidebar component.');
+    }
   };
 
+  const userInitials = currentUser?.fullName
+    ? currentUser.fullName
+        .split(' ')
+        .map((n: string) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    : currentUser?.username
+    ? currentUser.username[0].toUpperCase()
+    : 'OE';
+
   return (
-    <>
-      {/* Mobile Top Navigation Bar */}
-      <div className="lg:hidden bg-[#0B0F19] text-white p-4 flex items-center justify-between border-b border-slate-800 sticky top-0 z-40 w-full">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center font-black text-white text-sm">
-            OE
-          </div>
-          <span className="font-black text-sm uppercase tracking-tight">Orange Energies</span>
+    <div className="w-64 bg-[#0B1120] min-h-screen p-4 flex flex-col justify-between text-white font-sans shrink-0 border-r border-slate-800">
+      <div className="space-y-6">
+        
+        {/* Sidebar Logo Header - Orange Energies Logo */}
+        <div className="flex items-center justify-center p-3 rounded-xl bg-white shadow-sm border border-slate-200">
+          <img 
+            src={oeLogo} 
+            alt="Orange Energies Logo" 
+            className="h-10 w-auto object-contain"
+          />
         </div>
-        <button 
-          onClick={() => setIsOpen(!isOpen)}
-          className="p-2 text-slate-300 hover:text-white rounded-lg focus:outline-none"
-        >
-          {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
+
+        {/* User Info Card */}
+        <div className="bg-[#131C2E] p-3 rounded-xl border border-slate-800 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-orange-500 text-white font-black text-sm flex items-center justify-center shrink-0">
+            {userInitials}
+          </div>
+          <div className="overflow-hidden">
+            <h4 className="font-bold text-xs text-white truncate">
+              {currentUser?.fullName || currentUser?.username || 'User'}
+            </h4>
+            <span className="text-[10px] font-extrabold text-orange-500 uppercase tracking-wider block mt-0.5">
+              {currentUser?.role || 'OE INSTALLER'}
+            </span>
+          </div>
+        </div>
+
+        {/* Navigation Items */}
+        <nav className="space-y-1.5">
+          <button
+            onClick={() => handleTabClick('dashboard')}
+            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              selectedTab === 'dashboard'
+                ? 'bg-orange-500 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span>Dashboard</span>
+          </button>
+
+          <button
+            onClick={() => handleTabClick('new-contract')}
+            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              selectedTab === 'new-contract'
+                ? 'bg-orange-500 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <FilePlus className="w-4 h-4" />
+            <span>New Contract</span>
+          </button>
+
+          <button
+            onClick={() => handleTabClick('drafts')}
+            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              selectedTab === 'drafts'
+                ? 'bg-orange-500 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Drafts</span>
+          </button>
+
+          <button
+            onClick={() => handleTabClick('submissions')}
+            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              selectedTab === 'submissions'
+                ? 'bg-orange-500 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Send className="w-4 h-4" />
+            <span>Submissions</span>
+          </button>
+
+          <button
+            onClick={() => handleTabClick('contracts-view')}
+            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              selectedTab === 'contracts-view'
+                ? 'bg-orange-500 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <ScrollText className="w-4 h-4" />
+            <span>Contracts View</span>
+          </button>
+
+          {isAdmin && (
+            <button
+              onClick={() => handleTabClick('user-management')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                selectedTab === 'user-management'
+                  ? 'bg-orange-500 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>User Management</span>
+            </button>
+          )}
+        </nav>
       </div>
 
-      {/* Mobile Overlay */}
-      {isOpen && (
-        <div 
-          onClick={() => setIsOpen(false)}
-          className="lg:hidden fixed inset-0 bg-black/60 z-40 backdrop-blur-sm"
-        />
-      )}
-
-      {/* Sidebar Container */}
-      <aside className={`
-        fixed lg:static top-0 left-0 z-50 h-full w-64 bg-[#0B0F19] text-white flex flex-col justify-between p-6 border-r border-slate-800/80 transition-transform duration-300 ease-in-out
-        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
-        <div className="space-y-6">
-          {/* Logo Header */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center font-black text-white text-lg shadow-lg shadow-orange-500/20">
-              OE
-            </div>
-            <div>
-              <h2 className="text-sm font-black uppercase tracking-tight text-white leading-none">Orange Energies</h2>
-              <p className="text-[9px] text-orange-400 font-bold uppercase tracking-wider mt-1">Liberia Operations</p>
-            </div>
-          </div>
-
-          {/* User Profile Card */}
-          <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-800 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-orange-500 flex items-center justify-center font-black text-white text-sm shrink-0">
-              {currentUser?.fullName?.charAt(0) || currentUser?.username?.charAt(0) || 'U'}
-            </div>
-            <div className="overflow-hidden">
-              <div className="text-xs font-bold text-white truncate">{currentUser?.fullName || currentUser?.username}</div>
-              <div className="text-[10px] font-extrabold text-orange-400 uppercase tracking-wider">{currentUser?.role || 'User'}</div>
-            </div>
-          </div>
-
-          {/* Navigation Links */}
-          <nav className="space-y-1.5">
-            {menuItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleSelect(item.id)}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                    isActive 
-                      ? 'bg-orange-500 text-white shadow-md shadow-orange-500/20' 
-                      : 'text-slate-400 hover:bg-slate-800/60 hover:text-white'
-                  }`}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        {/* Logout Button */}
-        <button
-          onClick={onLogout}
-          className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-400 hover:bg-rose-500/10 transition-colors mt-6"
-        >
-          <LogOut className="w-4 h-4 shrink-0" />
-          <span>Sign Out</span>
-        </button>
-      </aside>
-    </>
+      {/* Sign Out Button */}
+      <button
+        onClick={() => onSignOut && onSignOut()}
+        className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors mt-6"
+      >
+        <LogOut className="w-4 h-4" />
+        <span>Sign Out</span>
+      </button>
+    </div>
   );
 };
+
+export default Sidebar;
